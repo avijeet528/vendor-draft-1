@@ -1513,4 +1513,216 @@ else:
                 st.markdown("".join(tbl), unsafe_allow_html=True)
 
                 # ── Extract price
+                st.markdown(
+                    f"<div style='margin-top:14px;padding:10px 14px;"
+                    f"background:{PWC_LGREY};border-radius:2px;"
+                    f"border-left:3px solid {PWC_RED}'>"
+                    f"<b style='font-size:0.85em;text-transform:uppercase;"
+                    f"letter-spacing:0.05em;color:{PWC_DARK}'>"
+                    f"💰 Extract Prices from Files</b>"
+                    f"<br><span style='font-size:0.80em;color:{PWC_GREY}'>"
+                    f"Click a button below to extract line-item prices "
+                    f"from the quotation file. "
+                    f"Table updates automatically.</span></div>",
+                    unsafe_allow_html=True)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # One button per file row
+                num_files = len(d_svc)
+                num_cols  = min(num_files, 3)
+                btn_cols  = st.columns(num_cols)
+
+                for bi, (_, brow) in enumerate(d_svc.iterrows()):
+                    burl = str(brow.get("Hyperlink", "")).strip()
+                    if not burl or burl == "nan":
+                        burl = str(brow.get("File Link", "")).strip()
+                    if not burl or burl == "nan":
+                        burl = str(brow.get("File URL",  "")).strip()
+
+                    bfname  = str(brow.get("File Name", "")).strip()
+                    bkey    = f"extracted_{bfname[:40]}"
+                    rkey    = f"run_{bkey}"
+                    blabel  = (bfname[:30] + "…"
+                               if len(bfname) > 30 else bfname)
+                    col_idx = bi % num_cols
+
+                    if burl and burl.startswith("http"):
+                        # Already extracted → show re-extract option
+                        if st.session_state.get(rkey):
+                            with btn_cols[col_idx]:
+                                st.markdown(
+                                    f"<div style='font-size:0.78em;"
+                                    f"color:{PWC_GREY};"
+                                    f"margin-bottom:4px'>"
+                                    f"✅ Extracted: <b>{blabel}</b></div>",
+                                    unsafe_allow_html=True)
+                                if st.button(
+                                    "🔄 Re-extract",
+                                    key=f"re_{bkey}_{svc[:15]}_{bi}",
+                                    help=f"Re-run extraction for {bfname}",
+                                ):
+                                    with st.spinner(
+                                            f"Re-extracting {blabel}…"):
+                                        res = extract_all_prices(burl)
+                                        st.session_state[bkey] = res
+                                        st.session_state[rkey] = True
+                                    st.rerun()
+                        else:
+                            with btn_cols[col_idx]:
+                                if st.button(
+                                    f"📥 {blabel}",
+                                    key=f"btn_{bkey}_{svc[:15]}_{bi}",
+                                    help=f"Extract prices from {bfname}",
+                                    type="primary",
+                                ):
+                                    with st.spinner(
+                                            f"Extracting from {blabel}…"):
+                                        res = extract_all_prices(burl)
+                                        st.session_state[bkey] = res
+                                        st.session_state[rkey] = True
+                                    st.rerun()
+                    else:
+                        with btn_cols[col_idx]:
+                            st.button(
+                                f"🚫 {blabel}",
+                                key=f"na_{bkey}_{svc[:15]}_{bi}",
+                                disabled=True,
+                                help="No URL available for this file")
+
+                # ── Show extraction summary if any done ────────
+                extracted_results = []
+                for _, brow in d_svc.iterrows():
+                    bfname = str(brow.get("File Name", "")).strip()
+                    bkey   = f"extracted_{bfname[:40]}"
+                    rkey   = f"run_{bkey}"
+                    if st.session_state.get(rkey):
+                        pr = st.session_state.get(
+                            bkey, {"line_items": [], "total": ""})
+                        extracted_results.append({
+                            "file"      : bfname,
+                            "vendor"    : brow.get("Vendor", ""),
+                            "items"     : pr.get("line_items", []),
+                            "total"     : pr.get("total", ""),
+                        })
+
+                if extracted_results:
+                    st.markdown(
+                        f"<div style='margin-top:16px;"
+                        f"border-top:2px solid {PWC_RED};"
+                        f"padding-top:10px'>"
+                        f"<b style='font-size:0.9em;"
+                        f"text-transform:uppercase;"
+                        f"letter-spacing:0.05em;color:{PWC_DARK}'>"
+                        f"📊 Extraction Summary — {svc[:60]}"
+                        f"</b></div>",
+                        unsafe_allow_html=True)
+
+                    # Summary table
+                    sum_tbl = [
+                        "<table class='price-table'>"
+                        "<thead><tr>"
+                        "<th style='width:20%'>Vendor</th>"
+                        "<th style='width:35%'>File</th>"
+                        "<th style='width:20%'>Line Items Found</th>"
+                        "<th style='width:25%'>Extracted Total</th>"
+                        "</tr></thead><tbody>"
+                    ]
+
+                    running_grand = 0.0
+                    for er in extracted_results:
+                        ev  = vendor_color_map.get(er["vendor"], "#666")
+                        vbg = (f"<span class='vendor-badge' "
+                               f"style='background:{ev}'>"
+                               f"{er['vendor']}</span>")
+                        fn_short = (
+                            er["file"][:45] + "…"
+                            if len(er["file"]) > 45
+                            else er["file"])
+                        n_items  = len(er["items"])
+                        tot      = er["total"]
+                        tval     = _parse_num(tot)
+                        if tval > 0:
+                            running_grand += tval
+                        tot_html = (
+                            f"<span style='color:{PWC_RED};"
+                            f"font-weight:700;font-size:1.05em'>"
+                            f"{tot}</span>"
+                            if tot else
+                            f"<span style='color:#C0C0C0;"
+                            f"font-style:italic'>Not found</span>")
+
+                        sum_tbl.append(
+                            f"<tr>"
+                            f"<td>{vbg}</td>"
+                            f"<td style='font-family:monospace;"
+                            f"font-size:0.80em;color:{PWC_DARK};"
+                            f"word-break:break-all'>{fn_short}</td>"
+                            f"<td style='text-align:center;"
+                            f"color:{PWC_GREY}'>{n_items}</td>"
+                            f"<td>{tot_html}</td>"
+                            f"</tr>")
+
+                    # Grand total summary row
+                    if running_grand > 0:
+                        sum_tbl.append(
+                            f"<tr class='grand-total'>"
+                            f"<td colspan='2'>"
+                            f"<b>GRAND TOTAL — "
+                            f"{len(extracted_results)} file(s) extracted"
+                            f"</b></td>"
+                            f"<td></td>"
+                            f"<td style='font-size:1.1em'>"
+                            f"≈ {running_grand:,.2f}</td>"
+                            f"</tr>")
+
+                    sum_tbl.append("</tbody></table>")
+                    st.markdown("".join(sum_tbl), unsafe_allow_html=True)
+
+        # ════════════════════════════════════════════════════
+        # SHARED SERVICES SUMMARY
+        # ════════════════════════════════════════════════════
+        shared_svcs = [
+            s for s in selected_svcs
+            if d_sel[d_sel["Service"] == s]["Vendor"].nunique() > 1
+        ]
+        if shared_svcs:
+            with st.expander(
+                "🔁 Shared Services — same service quoted by "
+                "multiple vendors",
+                    expanded=False):
+                for s in shared_svcs:
+                    vlist = sorted(
+                        d_sel[d_sel["Service"] == s]["Vendor"].unique())
+                    badge_parts = []
+                    for v in vlist:
+                        vc = vendor_color_map.get(v, "#666")
+                        badge_parts.append(
+                            f"<span class='vendor-badge' "
+                            f"style='background:{vc}'>{v}</span>")
+                    badges_html = " ".join(badge_parts)
+                    st.markdown(
+                        f"<div style='margin-bottom:10px;"
+                        f"padding:8px 12px;background:white;"
+                        f"border-left:3px solid {PWC_RED};"
+                        f"border-radius:2px'>"
+                        f"<b style='color:{PWC_DARK}'>{s}</b>"
+                        f"<br><div style='margin-top:6px'>"
+                        f"{badges_html}</div></div>",
+                        unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════════════════
+# FOOTER
+# ════════════════════════════════════════════════════════════
+st.markdown(
+    f"<div style='margin-top:40px;padding:16px 20px;"
+    f"background:{PWC_DARK};border-radius:2px;"
+    f"border-top:3px solid {PWC_RED}'>"
+    f"<p style='margin:0;color:{PWC_GREY};font-size:0.78em;"
+    f"text-align:center;letter-spacing:0.04em'>"
+    f"IT Procurement Dashboard &nbsp;|&nbsp; "
+    f"Powered by Streamlit &nbsp;|&nbsp; "
+    f"<span style='color:{PWC_RED}'>PwC</span> Internal Use Only"
+    f"</p></div>",
+    unsafe_allow_html=True)
                           
