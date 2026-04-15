@@ -1,6 +1,5 @@
 # ============================================================
-#  app.py — IT Procurement Service Dashboard
-#  PwC Brand: #D04A02 orange | #2D2D2D dark | Source Sans Pro
+#  app.py — IT Procurement Service Dashboard (Streamlit)
 # ============================================================
 
 import streamlit as st
@@ -9,23 +8,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from collections import defaultdict
 import openpyxl
-import os, re, io, zipfile
+import os
 
-try:
-    import requests
-    REQUESTS_OK = True
-except ImportError:
-    REQUESTS_OK = False
-
-try:
-    import pdfplumber
-    PDF_OK = True
-except ImportError:
-    PDF_OK = False
-
-# ════════════════════════════════════════════════════════════
-# PAGE CONFIG
-# ════════════════════════════════════════════════════════════
 st.set_page_config(
     page_title="IT Procurement Dashboard",
     page_icon="📋",
@@ -33,379 +17,155 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ════════════════════════════════════════════════════════════
-# PwC BRAND PALETTE
-# ════════════════════════════════════════════════════════════
-PWC = {
-    "orange"      : "#D04A02",
-    "orange_light": "#EB8C00",
-    "dark"        : "#2D2D2D",
-    "mid"         : "#7D7D7D",
-    "light"       : "#F3F3F3",
-    "white"       : "#FFFFFF",
-    "red"         : "#E0301E",
-    "teal"        : "#299D8F",
-    "blue"        : "#295477",
-    "yellow"      : "#FFB600",
-    "green"       : "#22992E",
-}
-
-PWC_CHART = [
-    "#D04A02","#295477","#299D8F",
-    "#FFB600","#22992E","#E0301E",
-    "#EB8C00","#6E2585","#8C8C8C","#004F9F",
-]
-
-# ════════════════════════════════════════════════════════════
-# CSS — PwC styling, NO f-strings (avoids backslash issues)
-# ════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&display=swap');
+    .main { background-color: #f8f9fa; }
+    #MainMenu {visibility: hidden;}
+    footer     {visibility: hidden;}
+    header     {visibility: hidden;}
 
-html, body, [class*="css"], .stMarkdown,
-div, p, span, td, th, label, button {
-    font-family: 'Source Sans Pro', 'Helvetica Neue',
-                 Arial, sans-serif !important;
-    color: #2D2D2D;
-}
-.main .block-container {
-    background-color: #F3F3F3;
-    padding-top: 1.5rem;
-}
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
-header { visibility: hidden; }
-[data-testid="collapsedControl"] { display: block !important; }
-section[data-testid="stSidebar"] { display: block !important; visibility: visible !important; }
+    .kpi-box   { border-radius:12px; padding:18px 10px;
+                 text-align:center; color:white; }
+    .kpi-value { font-size:2.2em; font-weight:800;
+                 margin:0; line-height:1.1; }
+    .kpi-label { font-size:0.85em; opacity:0.88; margin-top:5px; }
 
-/* KPI */
-.kpi-box {
-    border-radius: 4px; padding: 20px 12px;
-    text-align: center; color: #FFFFFF;
-    border-left: 5px solid rgba(255,255,255,0.35);
-}
-.kpi-value {
-    font-size: 2.3em; font-weight: 700;
-    margin: 0; line-height: 1.1; letter-spacing: -0.5px;
-}
-.kpi-label {
-    font-size: 0.82em; font-weight: 600; opacity: 0.92;
-    margin-top: 6px; letter-spacing: 0.5px; text-transform: uppercase;
-}
+    section[data-testid="stSidebar"] {
+        background-color: #2c3e50 !important;
+    }
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] span,
+    section[data-testid="stSidebar"] div {
+        color: #ecf0f1 !important;
+    }
+    section[data-testid="stSidebar"] div[data-baseweb="select"] {
+        background-color: white !important;
+        border-radius: 6px !important;
+    }
+    section[data-testid="stSidebar"] div[data-baseweb="select"] * {
+        color: #2c3e50 !important;
+    }
+    section[data-testid="stSidebar"] div[data-baseweb="input"] {
+        background-color: white !important;
+        border-radius: 6px !important;
+    }
+    section[data-testid="stSidebar"] div[data-baseweb="input"] input {
+        color: #2c3e50 !important;
+    }
+    section[data-testid="stSidebar"] span[data-baseweb="tag"] {
+        background-color: #2980b9 !important;
+    }
+    section[data-testid="stSidebar"] span[data-baseweb="tag"] span {
+        color: white !important;
+    }
+    section[data-testid="stSidebar"] small,
+    section[data-testid="stSidebar"] .stCaptionContainer p {
+        color: #95a5a6 !important;
+    }
+    div[data-testid="stExpander"] details summary p {
+        font-size:1em; font-weight:600;
+    }
 
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    background-color: #2D2D2D !important;
-    border-right: 3px solid #D04A02;
-}
-section[data-testid="stSidebar"] label,
-section[data-testid="stSidebar"] p,
-section[data-testid="stSidebar"] span,
-section[data-testid="stSidebar"] div {
-    color: #F0F0F0 !important;
-    font-family: 'Source Sans Pro', sans-serif !important;
-}
-section[data-testid="stSidebar"] div[data-baseweb="select"] {
-    background-color: #FFFFFF !important;
-    border-radius: 2px !important;
-    border: 1px solid #999 !important;
-}
-section[data-testid="stSidebar"] div[data-baseweb="select"] * {
-    color: #2D2D2D !important;
-}
-section[data-testid="stSidebar"] div[data-baseweb="input"] {
-    background-color: #FFFFFF !important;
-    border-radius: 2px !important;
-}
-section[data-testid="stSidebar"] div[data-baseweb="input"] input {
-    color: #2D2D2D !important;
-}
-section[data-testid="stSidebar"] span[data-baseweb="tag"] {
-    background-color: #D04A02 !important;
-    border-radius: 2px !important;
-}
-section[data-testid="stSidebar"] span[data-baseweb="tag"] span {
-    color: white !important;
-}
-
-/* Tabs */
-button[data-baseweb="tab"] {
-    font-weight: 600 !important; font-size: 0.92em !important;
-    color: #7D7D7D !important;
-}
-button[data-baseweb="tab"][aria-selected="true"] {
-    color: #D04A02 !important;
-    border-bottom: 3px solid #D04A02 !important;
-}
-
-/* Expander */
-div[data-testid="stExpander"] details summary p {
-    font-weight: 700; font-size: 0.95em; color: #2D2D2D !important;
-}
-div[data-testid="stExpander"] details {
-    border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px;
-}
-
-/* Vendor badge */
-.vendor-badge {
-    display: inline-block; padding: 3px 10px;
-    border-radius: 2px; color: white;
-    font-size: 0.79em; font-weight: 700;
-    white-space: nowrap; overflow: hidden;
-    text-overflow: ellipsis; max-width: 100%;
-    box-sizing: border-box; letter-spacing: 0.3px;
-}
-
-/* Price table */
-.price-table {
-    width: 100%; border-collapse: collapse;
-    table-layout: fixed; font-size: 0.84em;
-    margin-top: 8px; border: 1px solid #e0e0e0;
-}
-.price-table thead tr { background: #2D2D2D; }
-.price-table thead th {
-    padding: 10px 12px; text-align: left;
-    font-weight: 700; font-size: 0.83em;
-    letter-spacing: 0.4px; text-transform: uppercase;
-    border: none; color: white !important;
-}
-.price-table tbody tr:nth-child(even) { background: #F3F3F3; }
-.price-table tbody tr:hover           { background: #FCE8DC; }
-.price-table tbody td {
-    padding: 9px 12px; border-bottom: 1px solid #e8e8e8;
-    vertical-align: middle; word-break: break-word; color: #2D2D2D;
-}
-.price-table th:nth-child(1), .price-table td:nth-child(1) { width: 11%; }
-.price-table th:nth-child(2), .price-table td:nth-child(2) { width: 12%; }
-.price-table th:nth-child(3), .price-table td:nth-child(3) { width: 19%; }
-.price-table th:nth-child(4), .price-table td:nth-child(4) { width: 24%; }
-.price-table th:nth-child(5), .price-table td:nth-child(5) { width: 11%; }
-.price-table th:nth-child(6), .price-table td:nth-child(6) { width: 11%; }
-.price-table th:nth-child(7), .price-table td:nth-child(7) { width: 12%; }
-
-.total-row { background: #FCE8DC !important; font-weight: 700; }
-.total-row td {
-    border-top: 2px solid #D04A02 !important;
-    color: #D04A02 !important;
-}
-.grand-total-row { background: #D04A02 !important; }
-.grand-total-row td { color: white !important; font-weight: 800; }
+    /* ── FIX: vendor badge always fits in one line ── */
+    .vendor-badge {
+        display          : inline-block;
+        padding          : 4px 10px;
+        border-radius    : 10px;
+        color            : white;
+        font-size        : 0.80em;
+        font-weight      : 700;
+        white-space      : nowrap;
+        overflow         : hidden;
+        text-overflow    : ellipsis;
+        max-width        : 100%;
+        box-sizing       : border-box;
+    }
+    /* ── service result table ── */
+    .svc-table {
+        width           : 100%;
+        border-collapse : collapse;
+        table-layout    : fixed;        /* fixed columns = no overflow */
+    }
+    .svc-table th {
+        padding         : 8px 10px;
+        text-align      : left;
+        border-bottom   : 2px solid #ddd;
+        background      : #f4f6f7;
+        font-size       : 0.87em;
+        color           : #2c3e50;
+        word-break      : break-word;
+    }
+    .svc-table td {
+        padding         : 8px 10px;
+        border-bottom   : 1px solid #eee;
+        font-size       : 0.84em;
+        vertical-align  : middle;
+        word-break      : break-word;
+    }
+    /* fixed column widths */
+    .svc-table th:nth-child(1),
+    .svc-table td:nth-child(1) { width: 14%; }   /* Vendor  */
+    .svc-table th:nth-child(2),
+    .svc-table td:nth-child(2) { width: 14%; }   /* Category */
+    .svc-table th:nth-child(3),
+    .svc-table td:nth-child(3) { width: 36%; }   /* File Name */
+    .svc-table th:nth-child(4),
+    .svc-table td:nth-child(4) { width: 14%; }   /* Quoted Price */
+    .svc-table th:nth-child(5),
+    .svc-table td:nth-child(5) { width: 22%; }   /* File Link */
 </style>
 """, unsafe_allow_html=True)
 
-
 # ════════════════════════════════════════════════════════════
-# HELPERS
+# CONSTANTS
 # ════════════════════════════════════════════════════════════
-def fmt_currency(val):
-    try:
-        f = float(
-            str(val).replace(",","").replace("$","")
-                    .replace("€","").replace("£","").strip()
-        )
-        return "${:,.2f}".format(f)
-    except Exception:
-        return str(val)
-
-
-def section_label(txt, caption=""):
-    st.markdown(
-        "<div style='font-size:0.78em;font-weight:700;"
-        "letter-spacing:1px;text-transform:uppercase;"
-        "color:#D04A02;margin-bottom:4px'>{}</div>".format(txt),
-        unsafe_allow_html=True,
-    )
-    if caption:
-        st.caption(caption)
-
-
-def vendor_pill(vendor_name, color):
-    return (
-        "<span class='vendor-badge' style='background:{}'>"
-        "{}</span>".format(color, vendor_name)
-    )
-
-
-# ════════════════════════════════════════════════════════════
-# PRICE EXTRACTION ENGINE
-# ════════════════════════════════════════════════════════════
-PRICE_RE = re.compile(
-    r"""
-    (?:[\$\€\£\¥][\s]?)?
-    (?:USD|EUR|GBP|JPY|SGD|MYR|THB|AUD|CAD|INR)[\s]?
-    \d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?
-    |
-    (?:[\$\€\£\¥][\s]?)\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?
-    |
-    \d{1,3}(?:[,]\d{3})+(?:\.\d{1,2})?
-    """,
-    re.VERBOSE | re.IGNORECASE,
-)
-
-TOTAL_KW = [
-    "grand total","total amount","total price","amount due",
-    "net total","total cost","total value","quote total",
-    "estimated total","total",
+COLORS = [
+    "#2980b9","#27ae60","#8e44ad","#e67e22","#e74c3c",
+    "#16a085","#2c3e50","#f39c12","#1abc9c","#d35400",
+    "#7f8c8d","#c0392b","#3498db","#2ecc71","#9b59b6",
+    "#e91e63","#00bcd4","#ff5722","#795548","#607d8b",
 ]
-
-
-def _parse_num(s):
-    try:
-        return float(re.sub(r"[^\d.]", "", str(s)) or "0")
-    except ValueError:
-        return 0.0
-
-
-def _best_price(text):
-    tl = text.lower()
-    for kw in TOTAL_KW:
-        idx = tl.find(kw)
-        if idx == -1:
-            continue
-        snippet = text[max(0, idx - 30): idx + 350]
-        hits    = PRICE_RE.findall(snippet)
-        valid   = [h.strip() for h in hits if _parse_num(h) >= 100]
-        if valid:
-            return max(valid, key=_parse_num)
-    return ""
-
-
-def _extract_line_items(text):
-    items = []
-    for line in text.split("\n"):
-        prices = PRICE_RE.findall(line)
-        nums   = [p for p in prices if _parse_num(p) >= 1]
-        if not nums:
-            continue
-        desc = re.sub(r"[\$\€\£\¥\d,\.]+", "", line).strip()
-        desc = re.sub(r"\s{2,}", " ", desc)
-        if len(desc) < 3:
-            continue
-        unit  = min(nums, key=_parse_num) if len(nums) >= 2 else nums[0]
-        total = max(nums, key=_parse_num)
-        items.append({
-            "description": desc[:80],
-            "unit_price" : unit,
-            "line_total" : total,
-        })
-    return items[:30]
-
-
-def extract_prices_from_bytes(content, ext):
-    text = ""
-    ext  = ext.lower().strip(".")
-    try:
-        if ext == "pdf":
-            if not PDF_OK:
-                return {"grand_total": "pdfplumber not installed",
-                        "line_items": [], "raw_text": ""}
-            with pdfplumber.open(io.BytesIO(content)) as pdf:
-                for page in pdf.pages:
-                    t = page.extract_text()
-                    if t:
-                        text += t + "\n"
-
-        elif ext in ("xlsx", "xls"):
-            wb = openpyxl.load_workbook(
-                io.BytesIO(content), data_only=True, read_only=True)
-            rows_text = []
-            for ws in wb.worksheets:
-                for row in ws.iter_rows(values_only=True):
-                    row_str = "  ".join(
-                        str(c) for c in row if c is not None)
-                    if row_str.strip():
-                        rows_text.append(row_str)
-            text = "\n".join(rows_text)
-            wb.close()
-
-        elif ext == "docx":
-            with zipfile.ZipFile(io.BytesIO(content)) as z:
-                if "word/document.xml" in z.namelist():
-                    xml  = z.read("word/document.xml").decode(
-                        "utf-8", errors="ignore")
-                    text = re.sub(r"<[^>]+>", " ", xml)
-                    text = re.sub(r"\s{2,}", "\n", text)
-
-        elif ext == "pptx":
-            with zipfile.ZipFile(io.BytesIO(content)) as z:
-                for name in z.namelist():
-                    if name.startswith("ppt/slides/slide"):
-                        xml  = z.read(name).decode("utf-8", errors="ignore")
-                        text += re.sub(r"<[^>]+>", " ", xml) + "\n"
-
-    except Exception as e:
-        return {"grand_total": "Parse error: {}".format(e),
-                "line_items": [], "raw_text": ""}
-
-    grand = _best_price(text)
-    items = _extract_line_items(text)
-
-    if not grand and items:
-        s = sum(_parse_num(i["line_total"]) for i in items)
-        if s > 0:
-            grand = fmt_currency(s) + " (calc)"
-
-    return {
-        "grand_total": grand or "Not found",
-        "line_items" : items,
-        "raw_text"   : text[:3000],
-    }
-
-
-def fetch_and_extract(url):
-    empty = {"grand_total": "No URL", "line_items": [], "raw_text": ""}
-    if not REQUESTS_OK:
-        return {"grand_total": "requests not installed",
-                "line_items": [], "raw_text": ""}
-    if not url or not url.startswith("http"):
-        return empty
-    try:
-        resp = requests.get(url, timeout=20)
-        if resp.status_code != 200:
-            return {"grand_total": "HTTP {}".format(resp.status_code),
-                    "line_items": [], "raw_text": ""}
-        ext = url.split("?")[0].rsplit(".", 1)[-1].lower()
-        return extract_prices_from_bytes(resp.content, ext)
-    except Exception as e:
-        return {"grand_total": "Error: {}".format(e),
-                "line_items": [], "raw_text": ""}
-
+def get_color(i):
+    return COLORS[i % len(COLORS)]
 
 # ════════════════════════════════════════════════════════════
-# HYPERLINK EXTRACTION
+# EXTRACT EMBEDDED HYPERLINKS
 # ════════════════════════════════════════════════════════════
 @st.cache_data
-def extract_hyperlinks(file_path):
+def extract_hyperlinks(file_path: str) -> dict:
     link_map = {}
     try:
         wb = openpyxl.load_workbook(file_path)
         ws = wb.active
-        fn_col = None
-        hr     = None
+        file_name_col  = None
+        header_row_idx = None
         for row in ws.iter_rows():
             for cell in row:
-                if (cell.value and
-                        str(cell.value).strip().lower() == "file name"):
-                    fn_col = cell.column
-                    hr     = cell.row
+                if cell.value and \
+                        str(cell.value).strip().lower() == "file name":
+                    file_name_col  = cell.column
+                    header_row_idx = cell.row
                     break
-            if fn_col:
+            if file_name_col:
                 break
-        if fn_col:
-            for row in ws.iter_rows(
-                    min_row=hr + 1,
-                    min_col=fn_col,
-                    max_col=fn_col):
-                cell = row[0]
-                if cell.value and cell.hyperlink:
-                    link_map[str(cell.value).strip()] = \
-                        str(cell.hyperlink.target).strip()
+        if file_name_col is None:
+            return link_map
+        for row in ws.iter_rows(
+            min_row=header_row_idx + 1,
+            min_col=file_name_col,
+            max_col=file_name_col,
+        ):
+            cell = row[0]
+            if cell.value and cell.hyperlink:
+                display = str(cell.value).strip()
+                url     = str(cell.hyperlink.target).strip()
+                if url:
+                    link_map[display] = url
         wb.close()
     except Exception as e:
-        st.warning("Hyperlink warning: {}".format(e))
+        st.warning(f"⚠️ Could not extract hyperlinks: {e}")
     return link_map
-
 
 # ════════════════════════════════════════════════════════════
 # DATA LOADING
@@ -414,19 +174,19 @@ def extract_hyperlinks(file_path):
 def load_data():
     FILE_PATH = "Master Catalog.xlsx"
     if not os.path.exists(FILE_PATH):
-        st.error("File not found: {}".format(FILE_PATH))
+        st.error(f"❌ File not found: '{FILE_PATH}'.")
         return None, None
 
     raw = pd.read_excel(FILE_PATH, engine="openpyxl", header=None)
     header_row = None
     for i, row in raw.iterrows():
-        vals = [str(v).strip().lower() for v in row.values if pd.notna(v)]
-        if (any("category" in v for v in vals) and
-                any("file" in v for v in vals)):
+        row_vals = [str(v).strip().lower() for v in row.values if pd.notna(v)]
+        if (any("category" in v for v in row_vals) and
+                any("file" in v for v in row_vals)):
             header_row = i
             break
     if header_row is None:
-        st.error("Could not detect header row.")
+        st.error("❌ Could not detect header row.")
         return None, None
 
     df = pd.read_excel(FILE_PATH, engine="openpyxl", header=header_row)
@@ -437,119 +197,98 @@ def load_data():
     col_map = {}
     for c in df.columns:
         cl = str(c).lower().strip()
-        if cl == "category":
-            col_map["Category"]     = c
-        elif "vendor" in cl or "type" in cl:
-            col_map["Vendor"]       = c
-        elif cl == "file name":
-            col_map["File Name"]    = c
-        elif cl == "file link":
-            col_map["File Link"]    = c
-        elif cl == "file url":
-            col_map["File URL"]     = c
-        elif "comment" in cl:
-            col_map["Comments"]     = c
-        elif "quoted" in cl or "price" in cl:
-            col_map["Quoted Price"] = c
+        if cl == "category":                     col_map["Category"]     = c
+        elif "vendor" in cl or "type" in cl:     col_map["Vendor"]       = c
+        elif cl == "file name":                  col_map["File Name"]    = c
+        elif cl == "file link":                  col_map["File Link"]    = c
+        elif cl == "file url":                   col_map["File URL"]     = c
+        elif "comment" in cl:                    col_map["Comments"]     = c
+        elif "quoted" in cl or "price" in cl:    col_map["Quoted Price"] = c
 
     df.rename(columns={v: k for k, v in col_map.items()}, inplace=True)
 
     keep = ["Category", "Vendor", "File Name", "Comments"]
-    for e in ["File Link", "File URL", "Quoted Price"]:
-        if e in df.columns:
-            keep.append(e)
+    for extra in ["File Link", "File URL", "Quoted Price"]:
+        if extra in df.columns:
+            keep.append(extra)
     df = df[[c for c in keep if c in df.columns]].copy()
 
     df = df[
-        ~(df["Category"].astype(str).str.strip().isin(["", "nan"]) &
-          df["Vendor"].astype(str).str.strip().isin(["", "nan"]))
+        ~(
+            df["Category"].astype(str).str.strip().isin(["", "nan"]) &
+            df["Vendor"].astype(str).str.strip().isin(["", "nan"])
+        )
     ].copy()
 
     for col in df.columns:
         df[col] = df[col].fillna("").astype(str).str.strip()
+
     df.reset_index(drop=True, inplace=True)
 
-    hmap = extract_hyperlinks(FILE_PATH)
-    df["Hyperlink"] = df["File Name"].map(hmap).fillna("")
-    for fb in ["File Link", "File URL"]:
-        if fb in df.columns:
+    # Embedded hyperlinks
+    hyperlink_map  = extract_hyperlinks(FILE_PATH)
+    df["Hyperlink"] = df["File Name"].map(hyperlink_map).fillna("")
+    for fallback in ["File Link", "File URL"]:
+        if fallback in df.columns:
             df["Hyperlink"] = df.apply(
                 lambda r: r["Hyperlink"]
                 if r["Hyperlink"] not in ["", "nan"]
-                else r[fb], axis=1)
+                else r[fallback],
+                axis=1,
+            )
 
-    def parse_svc(raw_val):
+    def parse_services(raw_val):
         if not raw_val or str(raw_val).strip() in ["", "nan"]:
             return ["(unspecified)"]
         parts = [s.strip() for s in str(raw_val).split("\n") if s.strip()]
-        return parts or ["(unspecified)"]
+        return parts if parts else ["(unspecified)"]
 
-    df["Services List"] = df["Comments"].apply(parse_svc)
+    df["Services List"] = df["Comments"].apply(parse_services)
 
     df_exp = df.explode("Services List").copy()
     df_exp.rename(columns={"Services List": "Service"}, inplace=True)
     df_exp["Service"] = df_exp["Service"].str.strip()
     df_exp = df_exp[
-        ~df_exp["Service"].isin(["", "(unspecified)", "nan"])
+        (df_exp["Service"] != "") &
+        (df_exp["Service"] != "(unspecified)") &
+        (df_exp["Service"] != "nan")
     ].reset_index(drop=True)
 
     return df, df_exp
 
-
 # ════════════════════════════════════════════════════════════
-# LOAD DATA
+# LOAD
 # ════════════════════════════════════════════════════════════
 df_master, df_exploded = load_data()
 if df_master is None or df_exploded is None:
     st.stop()
 
-_sorted_vendors  = sorted(df_master["Vendor"].unique())
 vendor_color_map = {
-    v: PWC_CHART[i % len(PWC_CHART)]
-    for i, v in enumerate(_sorted_vendors)
+    v: get_color(i)
+    for i, v in enumerate(sorted(df_master["Vendor"].unique()))
 }
-MID_COLOR = PWC["mid"]   # used in string .format() calls below
-
 
 # ════════════════════════════════════════════════════════════
 # SIDEBAR
 # ════════════════════════════════════════════════════════════
-def sb_label(txt):
-    st.markdown(
-        "<p style='color:#F0F0F0;font-weight:700;font-size:0.88em;"
-        "margin:12px 0 4px;letter-spacing:0.5px;"
-        "text-transform:uppercase'>{}</p>".format(txt),
-        unsafe_allow_html=True,
-    )
-
-
 with st.sidebar:
-    def sb_label(txt):
-        st.markdown(
-            "<p style='color:#F0F0F0;font-weight:700;font-size:0.88em;"
-            "margin:12px 0 4px;letter-spacing:0.5px;"
-            "text-transform:uppercase'>{}</p>".format(txt),
-            unsafe_allow_html=True,
-        )
+    st.markdown("""
+    <div style='text-align:center;padding:20px 0 14px'>
+        <div style='font-size:2.5em'>📋</div>
+        <div style='font-size:1.15em;font-weight:800;
+                    color:white;margin:6px 0 2px'>
+            IT Procurement
+        </div>
+        <div style='font-size:0.78em;color:#95a5a6'>
+            Service &amp; Vendor Dashboard
+        </div>
+    </div>
+    <hr style='border-color:#3d5166;margin:0 0 16px'>
+    """, unsafe_allow_html=True)
 
-
-with st.sidebar:
-
-    # ── Logo / Title ──────────────────────────────────────────
     st.markdown(
-        "<div style='text-align:center;padding:22px 0 16px'>"
-        "<div style='font-size:2.2em'>📋</div>"
-        "<div style='font-size:1.1em;font-weight:700;color:white;"
-        "margin:6px 0 2px;letter-spacing:0.5px'>IT Procurement</div>"
-        "<div style='font-size:0.75em;color:#aaa;letter-spacing:1px;"
-        "text-transform:uppercase'>Service &amp; Vendor Dashboard</div>"
-        "</div>"
-        "<hr style='border-color:#D04A02;border-width:2px;margin:0 0 18px'>",
-        unsafe_allow_html=True,
-    )
-
-    # ── FILTER 1: Category ────────────────────────────────────
-    sb_label("📂 Category")
+        "<p style='color:#ecf0f1;font-weight:700;margin-bottom:4px'>"
+        "📂 Category</p>", unsafe_allow_html=True)
     all_cats = ["All"] + sorted([
         c for c in df_master["Category"].unique()
         if str(c).strip() not in ["", "nan"]
@@ -557,215 +296,153 @@ with st.sidebar:
     selected_cat = st.selectbox(
         "Category", all_cats, label_visibility="collapsed")
 
-    # ── FILTER 2: Vendor (scoped to category) ─────────────────
-    sb_label("🏢 Vendor")
-    vpool = (df_master if selected_cat == "All"
-             else df_master[df_master["Category"] == selected_cat])
+    st.markdown(
+        "<p style='color:#ecf0f1;font-weight:700;margin:10px 0 4px'>"
+        "🏢 Vendor</p>", unsafe_allow_html=True)
+    vendor_pool = (
+        df_master if selected_cat == "All"
+        else df_master[df_master["Category"] == selected_cat]
+    )
     all_vendors = ["All"] + sorted([
-        v for v in vpool["Vendor"].unique()
+        v for v in vendor_pool["Vendor"].unique()
         if str(v).strip() not in ["", "nan"]
     ])
     selected_vendor = st.selectbox(
         "Vendor", all_vendors, label_visibility="collapsed")
 
     st.markdown(
-        "<hr style='border-color:#555;margin:16px 0'>",
+        "<hr style='border-color:#3d5166;margin:14px 0'>",
         unsafe_allow_html=True)
 
-    # ── Build filtered data ───────────────────────────────────
     d_filt = df_exploded.copy()
-    if selected_cat    != "All":
+    if selected_cat != "All":
         d_filt = d_filt[d_filt["Category"] == selected_cat]
     if selected_vendor != "All":
-        d_filt = d_filt[d_filt["Vendor"]   == selected_vendor]
+        d_filt = d_filt[d_filt["Vendor"] == selected_vendor]
 
-    # ── FILTER 3: Service search ──────────────────────────────
-    sb_label("🔍 Search Services")
+    st.markdown(
+        "<p style='color:#ecf0f1;font-weight:700;margin-bottom:4px'>"
+        "🔍 Search Services</p>", unsafe_allow_html=True)
     svc_search = st.text_input(
         "Search", placeholder="e.g. Cisco, Oracle, M365…",
         label_visibility="collapsed")
 
-    avail = sorted([s for s in d_filt["Service"].unique()
-                    if str(s).strip() not in ["", "nan"]])
+    available_svcs = sorted([
+        s for s in d_filt["Service"].unique()
+        if str(s).strip() not in ["", "nan"]
+    ])
     if svc_search:
-        avail = [s for s in avail if svc_search.lower() in s.lower()]
-
-    # ── FILTER 4: Service multiselect ─────────────────────────
-    sb_label("🛠 Select Services ({} available)".format(len(avail)))
-    selected_svcs = st.multiselect(
-        "Services",
-        options=avail,
-        default=[],
-        label_visibility="collapsed",
-        help="Select one or more services to see vendor & quotation details",
-    )
+        available_svcs = [s for s in available_svcs
+                          if svc_search.lower() in s.lower()]
 
     st.markdown(
-        "<hr style='border-color:#555;margin:16px 0'>",
+        f"<p style='color:#ecf0f1;font-weight:700;margin:10px 0 4px'>"
+        f"🛠 Select Services "
+        f"<span style='font-weight:400;color:#95a5a6'>"
+        f"({len(available_svcs)} available)</span></p>",
         unsafe_allow_html=True)
+    selected_svcs = st.multiselect(
+        "Services", options=available_svcs, default=[],
+        label_visibility="collapsed",
+        help="Select one or more services")
 
-    # ── Stats footer ──────────────────────────────────────────
     st.markdown(
-        "<p style='color:#888;font-size:0.80em;margin:3px 0'>"
-        "📄 {} total quotes</p>"
-        "<p style='color:#888;font-size:0.80em;margin:3px 0'>"
-        "🛠 {} unique services</p>"
-        "<p style='color:#888;font-size:0.80em;margin:3px 0'>"
-        "🏢 {} vendors</p>".format(
-            len(df_master),
-            df_exploded["Service"].nunique(),
-            df_master["Vendor"].nunique()),
+        "<hr style='border-color:#3d5166;margin:14px 0'>",
+        unsafe_allow_html=True)
+    st.markdown(
+        f"<p style='color:#95a5a6;font-size:0.82em;margin:2px 0'>"
+        f"📄 {len(df_master)} total quotes</p>"
+        f"<p style='color:#95a5a6;font-size:0.82em;margin:2px 0'>"
+        f"🛠 {df_exploded['Service'].nunique()} unique services</p>"
+        f"<p style='color:#95a5a6;font-size:0.82em;margin:2px 0'>"
+        f"🏢 {df_master['Vendor'].nunique()} vendors</p>",
         unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════
 # MAIN HEADER
 # ════════════════════════════════════════════════════════════
-st.markdown(
-    "<div style='background:#2D2D2D;color:white;"
-    "padding:22px 30px;border-radius:4px;"
-    "border-left:6px solid #D04A02;margin-bottom:24px'>"
-    "<div style='font-size:0.75em;font-weight:700;"
-    "letter-spacing:2px;text-transform:uppercase;"
-    "color:#D04A02;margin-bottom:6px'>IT Procurement Analytics</div>"
-    "<h1 style='margin:0;font-size:1.6em;font-weight:700;"
-    "color:white;letter-spacing:-0.3px'>"
-    "Service &amp; Vendor Dashboard</h1>"
-    "<p style='margin:7px 0 0;opacity:0.65;font-size:0.88em;"
-    "font-weight:300'>"
-    "Filter by Category → Vendor auto-updates → "
-    "Select a service → View vendor, quotation &amp; price breakdown"
-    "</p></div>",
-    unsafe_allow_html=True)
-
+st.markdown("""
+<div style='background:linear-gradient(135deg,#2c3e50 0%,#3d5a73 100%);
+            color:white;padding:20px 28px;border-radius:14px;
+            margin-bottom:22px;
+            box-shadow:0 4px 12px rgba(0,0,0,0.15)'>
+    <h1 style='margin:0;font-size:1.65em;font-weight:800'>
+        📋 IT Procurement — Service &amp; Vendor Dashboard
+    </h1>
+    <p style='margin:7px 0 0;opacity:0.72;font-size:0.9em'>
+        Filter by Category → Vendor auto-updates →
+        Select a service → See vendor &amp; quotation file instantly
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════
 # KPI CARDS
 # ════════════════════════════════════════════════════════════
-k1, k2, k3, k4 = st.columns(4)
-
-
-def kpi(col, val, lbl, bg):
+c1, c2, c3, c4 = st.columns(4)
+def kpi_card(col, value, label, color):
     col.markdown(
-        "<div class='kpi-box' style='background:{}'>"
-        "<div class='kpi-value'>{}</div>"
-        "<div class='kpi-label'>{}</div>"
-        "</div>".format(bg, val, lbl),
+        f"<div class='kpi-box' style='background:{color}'>"
+        f"<div class='kpi-value'>{value}</div>"
+        f"<div class='kpi-label'>{label}</div></div>",
         unsafe_allow_html=True)
 
-
-kpi(k1, d_filt["File Name"].nunique(),  "Total Quotes",    PWC["orange"])
-kpi(k2, d_filt["Service"].nunique(),    "Unique Services", PWC["blue"])
-kpi(k3, d_filt["Vendor"].nunique(),     "Vendors",         PWC["teal"])
-kpi(k4, d_filt["Category"].nunique(),   "Categories",      PWC["dark"])
+kpi_card(c1, d_filt["File Name"].nunique(),  "Total Quotes",    "#2980b9")
+kpi_card(c2, d_filt["Service"].nunique(),    "Unique Services", "#27ae60")
+kpi_card(c3, d_filt["Vendor"].nunique(),     "Vendors",         "#8e44ad")
+kpi_card(c4, d_filt["Category"].nunique(),   "Categories",      "#e67e22")
 st.markdown("<br>", unsafe_allow_html=True)
-
-
-# ════════════════════════════════════════════════════════════
-# CHART CONSTANTS
-# ════════════════════════════════════════════════════════════
-CHART_BG   = PWC["light"]
-CHART_FONT = dict(
-    family="Source Sans Pro, Helvetica Neue, Arial",
-    size=11,
-    color=PWC["dark"],
-)
-
 
 # ════════════════════════════════════════════════════════════
 # TABS
 # ════════════════════════════════════════════════════════════
-tab_charts, tab_table = st.tabs(["📊 Analytics", "📄 Data Table"])
+tab_charts, tab_table = st.tabs(["📊 Charts", "📄 Data Table"])
 
 with tab_charts:
+    col_l, col_r = st.columns(2)
 
-    cl, cr = st.columns([1, 1], gap="large")
-
-    # ── LEFT: Service overlap ─────────────────────────────────
-    with cl:
-        section_label(
-            "SERVICE OVERLAP ANALYSIS",
-            "Orange bars = same service quoted by multiple vendors. "
-            "Identifies competitive procurement opportunities.")
+    with col_l:
         shared = (
             d_filt.groupby("Service")["Vendor"].nunique()
             .sort_values(ascending=False).head(20).reset_index()
         )
         shared.columns = ["Service", "Vendor Count"]
-        shared["Colour"] = shared["Vendor Count"].apply(
-            lambda x: PWC["orange"] if x > 1 else "#C0C0C0")
+        shared["Color"] = shared["Vendor Count"].apply(
+            lambda x: "#e74c3c" if x > 1 else "#bdc3c7")
         fig1 = go.Figure(go.Bar(
             x=shared["Vendor Count"],
-            y=shared["Service"].str[:46],
+            y=shared["Service"].str[:44],
             orientation="h",
-            marker_color=shared["Colour"],
-            marker_line_width=0,
+            marker_color=shared["Color"],
             text=shared["Vendor Count"],
             textposition="outside",
-            textfont=dict(size=10),
         ))
         fig1.update_layout(
-            height=500,
-            plot_bgcolor=CHART_BG,
-            paper_bgcolor=CHART_BG,
-            margin=dict(l=5, r=40, t=20, b=10),
-            font=CHART_FONT,
-            xaxis=dict(
-                title="Number of Vendors",
-                showgrid=True,
-                gridcolor="#E0E0E0",
-                zeroline=False),
-            yaxis=dict(
-                autorange="reversed",
-                tickfont=dict(size=9.5)),
-            bargap=0.35,
-        )
+            title="🔁 Services Shared Across Vendors (Top 20)",
+            xaxis_title="# Vendors", height=540,
+            plot_bgcolor="#f8f9fa", paper_bgcolor="#f8f9fa",
+            margin=dict(l=10, r=30, t=45, b=10),
+            font=dict(size=11),
+            yaxis=dict(autorange="reversed"))
         st.plotly_chart(fig1, use_container_width=True)
 
-    # ── RIGHT: Vendor service coverage ───────────────────────
-    with cr:
-        section_label(
-            "VENDOR SERVICE COVERAGE",
-            "Number of unique services each vendor provides. "
-            "Higher = broader vendor capability.")
-        spv = (
-            d_filt.groupby("Vendor")["Service"].nunique()
-            .sort_values(ascending=False).reset_index()
-        )
-        spv.columns = ["Vendor", "Count"]
-        spv["Colour"] = [
-            vendor_color_map.get(v, MID_COLOR) for v in spv["Vendor"]
-        ]
+    with col_r:
+        spv = (d_filt.groupby("Vendor")["Service"].nunique()
+               .sort_values(ascending=False).reset_index())
+        spv.columns = ["Vendor", "Service Count"]
+        spv["Color"] = [vendor_color_map.get(v, "#999") for v in spv["Vendor"]]
         fig2 = go.Figure(go.Bar(
-            x=spv["Vendor"],
-            y=spv["Count"],
-            marker_color=spv["Colour"],
-            marker_line_width=0,
-            text=spv["Count"],
-            textposition="outside",
-            textfont=dict(size=10),
-        ))
+            x=spv["Vendor"], y=spv["Service Count"],
+            marker_color=spv["Color"],
+            text=spv["Service Count"], textposition="outside"))
         fig2.update_layout(
-            height=500,
-            plot_bgcolor=CHART_BG,
-            paper_bgcolor=CHART_BG,
-            margin=dict(l=5, r=10, t=20, b=10),
-            font=CHART_FONT,
-            yaxis=dict(
-                title="Unique Services",
-                showgrid=True,
-                gridcolor="#E0E0E0",
-                zeroline=False),
-            xaxis=dict(
-                tickangle=-35,
-                tickfont=dict(size=9.5)),
-            bargap=0.35,
-        )
+            title="📦 Unique Services per Vendor",
+            yaxis_title="# Unique Services", height=540,
+            plot_bgcolor="#f8f9fa", paper_bgcolor="#f8f9fa",
+            margin=dict(l=10, r=10, t=45, b=10),
+            font=dict(size=11), xaxis_tickangle=-30)
         st.plotly_chart(fig2, use_container_width=True)
 
-    # ── FULL WIDTH: Category donut ────────────────────────────
-    section_label(
-        "PROCUREMENT CATEGORY DISTRIBUTION",
-        "Share of total quote files across IT procurement categories.")
     cat_counts = (
         d_filt.drop_duplicates(subset=["Category", "File Name"])
         .groupby("Category").size().reset_index()
@@ -773,373 +450,208 @@ with tab_charts:
     cat_counts.columns = ["Category", "Count"]
     if not cat_counts.empty:
         fig3 = px.pie(
-            cat_counts,
-            names="Category",
-            values="Count",
-            hole=0.50,
-            color_discrete_sequence=PWC_CHART,
-        )
-        fig3.update_traces(
-            textposition="outside",
-            textinfo="label+percent",
-            textfont_size=11,
-            pull=[0.03] * len(cat_counts),
-        )
+            cat_counts, names="Category", values="Count",
+            title="🥧 Quote Files by Category",
+            hole=0.45, color_discrete_sequence=COLORS)
         fig3.update_layout(
-            height=400,
-            margin=dict(l=20, r=20, t=20, b=20),
-            paper_bgcolor=CHART_BG,
-            font=CHART_FONT,
-            showlegend=True,
-            legend=dict(
-                orientation="v",
-                x=1.02, y=0.5,
-                font=dict(size=10)),
-        )
+            height=480,
+            margin=dict(l=10, r=10, t=45, b=10),
+            paper_bgcolor="#f8f9fa", font=dict(size=12))
+        fig3.update_traces(
+            textposition="inside", textinfo="percent+label")
         st.plotly_chart(fig3, use_container_width=True)
 
 with tab_table:
-    dm = df_master.copy()
-    if selected_cat    != "All":
-        dm = dm[dm["Category"] == selected_cat]
+    dm_display = df_master.copy()
+    if selected_cat != "All":
+        dm_display = dm_display[dm_display["Category"] == selected_cat]
     if selected_vendor != "All":
-        dm = dm[dm["Vendor"]   == selected_vendor]
+        dm_display = dm_display[dm_display["Vendor"] == selected_vendor]
     st.dataframe(
-        dm.drop(columns=["Services List","Hyperlink"], errors="ignore"),
-        use_container_width=True,
-        height=460)
-
+        dm_display.drop(
+            columns=["Services List", "Hyperlink"], errors="ignore"),
+        use_container_width=True, height=450)
 
 # ════════════════════════════════════════════════════════════
 # SERVICE SELECTION RESULTS
 # ════════════════════════════════════════════════════════════
 st.markdown(
-    "<hr style='border:none;border-top:2px solid #D04A02;"
-    "margin:24px 0 16px'>",
+    "<hr style='border-color:#ddd;margin:14px 0'>",
     unsafe_allow_html=True)
-
-section_label("SERVICE SELECTION & QUOTATION ANALYSIS")
-st.markdown("### Select services from the sidebar to begin analysis")
+st.markdown("### 🛠 Service → Vendor & Quotation File Results")
 
 if not selected_svcs:
-    st.info(
-        "👈 **Select one or more services** from the sidebar. "
-        "Each selection shows vendors, all quoted line items, "
-        "unit prices, totals and quotation file links.")
+    st.info("👈 **Select one or more services** from the sidebar.")
 else:
     d_sel = d_filt[d_filt["Service"].isin(selected_svcs)].copy()
 
     if d_sel.empty:
-        st.warning("⚠️ No results found under current filters.")
+        st.warning("⚠️ No results found for selected service(s).")
     else:
-        # ── Vendor coverage map ───────────────────────────────
-        vsmap = defaultdict(set)
-        for _, r in d_sel.iterrows():
-            vsmap[r["Vendor"]].add(r["Service"])
+        vendor_svc_map = defaultdict(set)
+        for _, row in d_sel.iterrows():
+            vendor_svc_map[row["Vendor"]].add(row["Service"])
 
-        vendors_all  = sorted([v for v, s in vsmap.items()
+        vendors_all  = sorted([v for v, s in vendor_svc_map.items()
                                 if set(selected_svcs).issubset(s)])
-        vendors_some = sorted([v for v, s in vsmap.items()
+        vendors_some = sorted([v for v, s in vendor_svc_map.items()
                                 if not set(selected_svcs).issubset(s)])
 
-        # ── Summary banners ───────────────────────────────────
         if len(selected_svcs) > 1:
             if vendors_all:
-                names = " · ".join(
-                    ["**{}**".format(v) for v in vendors_all])
+                names = " · ".join([f"**{v}**" for v in vendors_all])
                 st.success(
-                    "✅ **{} vendor(s) offer ALL {} services:** {}".format(
-                        len(vendors_all), len(selected_svcs), names))
+                    f"✅ **{len(vendors_all)} vendor(s) offer ALL "
+                    f"{len(selected_svcs)} services:** {names}")
             else:
                 st.warning(
-                    "⚠️ No single vendor covers all {} "
-                    "selected services.".format(len(selected_svcs)))
-
+                    f"⚠️ No single vendor covers all "
+                    f"{len(selected_svcs)} selected services.")
             if vendors_some:
                 with st.expander(
-                        "🔵 Vendors with partial coverage",
-                        expanded=False):
+                        "🔵 Vendors with partial coverage", expanded=False):
                     for v in vendors_some:
-                        cov   = vsmap[v].intersection(set(selected_svcs))
-                        color = vendor_color_map.get(v, MID_COLOR)
+                        covered = vendor_svc_map[v].intersection(
+                            set(selected_svcs))
+                        c = vendor_color_map.get(v, "#666")
                         st.markdown(
-                            "{} &nbsp; covers **{}/{}**: _{}_".format(
-                                vendor_pill(v, color),
-                                len(cov), len(selected_svcs),
-                                ", ".join(sorted(cov))),
+                            f"<span style='background:{c};color:white;"
+                            f"padding:3px 10px;border-radius:10px;"
+                            f"font-size:0.88em;font-weight:bold'>{v}</span>"
+                            f" &nbsp; covers **{len(covered)}/"
+                            f"{len(selected_svcs)}**: "
+                            f"_{', '.join(sorted(covered))}_",
                             unsafe_allow_html=True)
 
-        section_label(
-            "DETAILED QUOTATION BREAKDOWN — PER SERVICE",
-            "Click 'Extract Prices' to pull line-item pricing "
-            "directly from the quotation files.")
-
+        st.markdown("#### 📄 Vendor & Quotation File — per Service")
         has_price = "Quoted Price" in d_sel.columns
 
         for svc in selected_svcs:
             d_svc = (
                 d_sel[d_sel["Service"] == svc]
-                .drop_duplicates(subset=["Vendor","File Name"])
+                .drop_duplicates(subset=["Vendor", "File Name"])
                 .sort_values("Vendor")
             )
-            vc    = d_svc["Vendor"].nunique()
-            s_tag = "⚠️ SHARED" if vc > 1 else "✅ SINGLE VENDOR"
+            vendor_count = d_svc["Vendor"].nunique()
+            shared_tag   = (
+                "⚠️ SHARED BY MULTIPLE VENDORS"
+                if vendor_count > 1 else "✅ SINGLE VENDOR")
 
             with st.expander(
-                "🛠 {}  ·  {} vendor(s)  ·  {} file(s)  [{}]".format(
-                    svc, vc, len(d_svc), s_tag),
-                expanded=True,
-            ):
-                # Vendor pills row
-                pills_html = " ".join([
-                    vendor_pill(v, vendor_color_map.get(v, MID_COLOR))
+                f"🛠 {svc}  |  {vendor_count} vendor(s) · "
+                f"{len(d_svc)} file(s)  [{shared_tag}]",
+                expanded=True):
+
+                badges = " ".join([
+                    f"<span class='vendor-badge' "
+                    f"style='background:{vendor_color_map.get(v, \"#666\")}'>"
+                    f"{v}</span>"
                     for v in sorted(d_svc["Vendor"].unique())
                 ])
                 st.markdown(
-                    "<div style='margin-bottom:14px'>"
-                    "<span style='font-weight:700;font-size:0.88em'>"
-                    "Vendors offering this service:</span>"
-                    "&nbsp;&nbsp;{}</div>".format(pills_html),
+                    f"<div style='margin-bottom:12px'>"
+                    f"<b>Vendors offering this service:</b>"
+                    f"&nbsp;{badges}</div>",
                     unsafe_allow_html=True)
 
-                # ── Build extensive price table ────────────────
-                tbl = [
-                    "<table class='price-table'><thead><tr>"
+                # ── HTML table with fixed layout ──────────────
+                rows = [
+                    "<table class='svc-table'>"
+                    "<thead><tr>"
                     "<th>Vendor</th>"
                     "<th>Category</th>"
                     "<th>📄 File Name</th>"
-                    "<th>🔖 Line Item / Description</th>"
-                    "<th>Unit Price</th>"
-                    "<th>Line Total</th>"
-                    "<th>🔗 Link</th>"
-                    "</tr></thead><tbody>"
                 ]
-
-                overall_total = 0.0
-                has_any_price = False
+                if has_price:
+                    rows.append("<th>💰 Quoted Price</th>")
+                rows.append("<th>🔗 File Link</th></tr></thead><tbody>")
 
                 for i, (_, row) in enumerate(d_svc.iterrows()):
-                    bg    = "#ffffff" if i % 2 == 0 else PWC["light"]
-                    color = vendor_color_map.get(row["Vendor"], MID_COLOR)
-                    fname = str(row.get("File Name","")).strip()
+                    bg  = "#ffffff" if i % 2 == 0 else "#f9f9f9"
+                    vc  = vendor_color_map.get(row["Vendor"], "#666")
 
-                    # Resolve URL
-                    url = str(row.get("Hyperlink","")).strip()
-                    if not url or url == "nan":
-                        url = str(row.get("File Link","")).strip()
-                    if not url or url == "nan":
-                        url = str(row.get("File URL","")).strip()
-                    if url == "nan":
-                        url = ""
+                    # ── Vendor cell — single-line badge ────────
+                    v_cell = (
+                        f"<span class='vendor-badge' "
+                        f"style='background:{vc}'>"
+                        f"{row['Vendor']}</span>"
+                    )
 
-                    # Vendor badge cell
-                    v_cell = vendor_pill(row["Vendor"], color)
-
-                    # File name cell
+                    # ── File name cell ─────────────────────────
+                    fname   = str(row.get("File Name", "")).strip()
                     fn_cell = (
-                        "<span style='font-family:monospace;"
-                        "font-size:0.80em;word-break:break-all'>"
-                        "{}</span>".format(fname)
+                        f"<span style='font-family:monospace;"
+                        f"font-size:0.82em;color:#2c3e50;"
+                        f"word-break:break-all'>{fname}</span>"
                     )
 
-                    # Link cell
-                    if url and url.startswith("http"):
-                        l_cell = (
-                            "<a href='{}' target='_blank' "
-                            "style='color:#D04A02;font-weight:600;"
-                            "font-size:0.85em;text-decoration:none'>"
-                            "↗ Open</a>".format(url)
+                    # ── File link cell — embedded hyperlink ────
+                    url = str(row.get("Hyperlink", "")).strip()
+                    if not url or url == "nan":
+                        url = str(row.get("File Link", "")).strip()
+                    if not url or url == "nan":
+                        url = str(row.get("File URL",  "")).strip()
+
+                    if url and url not in ["", "nan"] \
+                            and url.startswith("http"):
+                        label = (fname[:38] + "…"
+                                 if len(fname) > 38 else fname)
+                        link_cell = (
+                            f"<a href='{url}' target='_blank' "
+                            f"style='color:#2980b9;"
+                            f"text-decoration:underline;"
+                            f"font-family:monospace;"
+                            f"font-size:0.82em;word-break:break-all'>"
+                            f"🔗 {label}</a>"
                         )
                     else:
-                        l_cell = (
-                            "<span style='color:#bbb;font-size:0.80em'>"
-                            "—</span>"
+                        link_cell = (
+                            "<span style='color:#bdc3c7;"
+                            "font-size:0.82em;font-style:italic'>"
+                            "No link available</span>"
                         )
 
-                    # Quoted price from master sheet
-                    q_price = str(row.get("Quoted Price","")).strip()
-                    q_num   = (_parse_num(q_price)
-                               if q_price not in ["","nan","0"] else 0.0)
-
-                    # Check session_state for extracted data
-                    cache_key = "price_{}".format(fname)
-                    parsed    = st.session_state.get(cache_key)
-
-                    if parsed and parsed.get("line_items"):
-                        items  = parsed["line_items"]
-                        gtotal = parsed.get("grand_total","")
-
-                        for j, item in enumerate(items):
-                            desc = item.get("description","")
-                            up   = item.get("unit_price","—")
-                            lt   = item.get("line_total","—")
-                            has_any_price = True
-
-                            if j == 0:
-                                # First row: show vendor + file name
-                                tbl.append(
-                                    "<tr style='background:{}'>"
-                                    "<td>{}</td>"
-                                    "<td style='color:#555'>{}</td>"
-                                    "<td>{}</td>"
-                                    "<td style='color:#2D2D2D'>{}</td>"
-                                    "<td style='text-align:right;"
-                                    "font-family:monospace'>{}</td>"
-                                    "<td style='text-align:right;"
-                                    "font-family:monospace;"
-                                    "font-weight:600'>{}</td>"
-                                    "<td>{}</td>"
-                                    "</tr>".format(
-                                        bg, v_cell,
-                                        row["Category"],
-                                        fn_cell, desc,
-                                        up, lt, l_cell)
-                                )
-                            else:
-                                # Continuation rows: blank vendor/cat/file
-                                tbl.append(
-                                    "<tr style='background:{}'>"
-                                    "<td></td><td></td><td></td>"
-                                    "<td style='color:#2D2D2D'>{}</td>"
-                                    "<td style='text-align:right;"
-                                    "font-family:monospace'>{}</td>"
-                                    "<td style='text-align:right;"
-                                    "font-family:monospace;"
-                                    "font-weight:600'>{}</td>"
-                                    "<td></td>"
-                                    "</tr>".format(bg, desc, up, lt)
-                                )
-
-                        # File grand total row
-                        file_total = (
-                            _parse_num(gtotal)
-                            if gtotal and "Not found" not in gtotal
-                               and "calc" not in gtotal
-                            else sum(
-                                _parse_num(it["line_total"])
-                                for it in items)
-                        )
-                        overall_total += file_total
-                        tbl.append(
-                            "<tr class='total-row'>"
-                            "<td colspan='5' style='text-align:right;"
-                            "text-transform:uppercase;"
-                            "letter-spacing:0.5px;padding-right:16px'>"
-                            "File Grand Total</td>"
-                            "<td style='text-align:right;"
-                            "font-family:monospace'>{}</td>"
-                            "<td></td>"
-                            "</tr>".format(fmt_currency(file_total))
-                        )
-
-                    else:
-                        # Not yet extracted — show master quoted price
-                        if q_num > 0:
-                            qp_cell = (
-                                "<span style='color:#22992E;"
-                                "font-weight:700;"
-                                "font-family:monospace'>{}</span>".format(
-                                    fmt_currency(q_price))
-                            )
-                            overall_total += q_num
-                            has_any_price  = True
-                        else:
-                            qp_cell = (
-                                "<span style='color:#bbb;"
-                                "font-style:italic'>"
-                                "Click Extract below</span>"
-                            )
-
-                        tbl.append(
-                            "<tr style='background:{}'>"
-                            "<td>{}</td>"
-                            "<td style='color:#555'>{}</td>"
-                            "<td>{}</td>"
-                            "<td style='color:#999;font-style:italic'>"
-                            "Not yet extracted — click button below"
-                            "</td>"
-                            "<td>—</td>"
-                            "<td style='text-align:right'>{}</td>"
-                            "<td>{}</td>"
-                            "</tr>".format(
-                                bg, v_cell,
-                                row["Category"],
-                                fn_cell,
-                                qp_cell, l_cell)
-                        )
-
-                # ── Overall total row (PwC orange) ─────────────
-                if has_any_price and overall_total > 0:
-                    tbl.append(
-                        "<tr class='grand-total-row'>"
-                        "<td colspan='5' style='text-align:right;"
-                        "font-weight:800;font-size:1em;"
-                        "letter-spacing:0.5px;"
-                        "text-transform:uppercase;padding-right:16px'>"
-                        "TOTAL VALUE — ALL FILES FOR THIS SERVICE"
-                        "</td>"
-                        "<td style='text-align:right;"
-                        "font-family:monospace;"
-                        "font-size:1.05em'>{}</td>"
-                        "<td></td>"
-                        "</tr>".format(fmt_currency(overall_total))
+                    # ── Price cell ─────────────────────────────
+                    pval   = str(row.get("Quoted Price", "")).strip()
+                    p_cell = (
+                        f"<span style='color:#27ae60;font-weight:600'>"
+                        f"{pval}</span>"
+                        if pval and pval not in ["", "nan", "0"]
+                        else "<span style='color:#bdc3c7'>—</span>"
                     )
 
-                tbl.append("</tbody></table>")
-                st.markdown("".join(tbl), unsafe_allow_html=True)
+                    rows.append(f"<tr style='background:{bg}'>")
+                    rows.append(
+                        f"<td>{v_cell}</td>"
+                        f"<td style='color:#555'>{row['Category']}</td>"
+                        f"<td>{fn_cell}</td>"
+                    )
+                    if has_price:
+                        rows.append(f"<td>{p_cell}</td>")
+                    rows.append(f"<td>{link_cell}</td></tr>")
 
-                # ── Extract Price button ───────────────────────
-                st.markdown("<br>", unsafe_allow_html=True)
+                rows.append("</tbody></table>")
+                st.markdown("".join(rows), unsafe_allow_html=True)
 
-                btn_label = "💰 Extract Prices from Files — {}".format(
-                    svc[:45])
-                if st.button(
-                    btn_label,
-                    key="btn_{}".format(svc[:40]),
-                    type="primary",
-                    use_container_width=False,
-                ):
-                    prog       = st.progress(0, text="Extracting…")
-                    total_rows = len(d_svc)
-                    for k_idx, (_, row) in enumerate(d_svc.iterrows()):
-                        fname     = str(row.get("File Name","")).strip()
-                        url       = str(row.get("Hyperlink","")).strip()
-                        if not url or url == "nan":
-                            url = str(row.get("File Link","")).strip()
-                        if not url or url == "nan":
-                            url = str(row.get("File URL","")).strip()
-                        cache_key = "price_{}".format(fname)
-                        if (url and url.startswith("http") and
-                                st.session_state.get(cache_key) is None):
-                            result = fetch_and_extract(url)
-                            st.session_state[cache_key] = result
-                        prog.progress(
-                            (k_idx + 1) / total_rows,
-                            text="Processed {}/{}".format(
-                                k_idx + 1, total_rows))
-                    prog.empty()
-                    st.rerun()
-
-        # ── Shared services summary ────────────────────────────
         shared_svcs = [
             s for s in selected_svcs
             if d_sel[d_sel["Service"] == s]["Vendor"].nunique() > 1
         ]
         if shared_svcs:
             with st.expander(
-                "🔁 Shared Services — same service by multiple vendors "
-                "(competitive opportunity)",
-                expanded=False,
-            ):
+                    "🔁 Shared Services — offered by multiple vendors",
+                    expanded=False):
                 for s in shared_svcs:
-                    vlist = sorted(
+                    vlist  = sorted(
                         d_sel[d_sel["Service"] == s]["Vendor"].unique())
-                    pills = " ".join([
-                        vendor_pill(v, vendor_color_map.get(v, MID_COLOR))
+                    badges = " ".join([
+                        f"<span class='vendor-badge' "
+                        f"style='background:"
+                        f"{vendor_color_map.get(v, \"#666\")}'>"
+                        f"{v}</span>"
                         for v in vlist
                     ])
                     st.markdown(
-                        "<div style='margin-bottom:10px'>"
-                        "<span style='font-weight:700'>{}</span>"
-                        " &nbsp;→&nbsp; {}</div>".format(s, pills),
+                        f"<div style='margin-bottom:8px'>"
+                        f"<b>{s}</b> → {badges}</div>",
                         unsafe_allow_html=True)
