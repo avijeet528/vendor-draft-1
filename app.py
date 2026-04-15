@@ -524,13 +524,13 @@ def sb_label(txt):
 
 
 with st.sidebar:
-def sb_label(txt):
-    st.markdown(
-        "<p style='color:#F0F0F0;font-weight:700;font-size:0.88em;"
-        "margin:12px 0 4px;letter-spacing:0.5px;"
-        "text-transform:uppercase'>{}</p>".format(txt),
-        unsafe_allow_html=True,
-    )
+    def sb_label(txt):
+        st.markdown(
+            "<p style='color:#F0F0F0;font-weight:700;font-size:0.88em;"
+            "margin:12px 0 4px;letter-spacing:0.5px;"
+            "text-transform:uppercase'>{}</p>".format(txt),
+            unsafe_allow_html=True,
+        )
 
 
 with st.sidebar:
