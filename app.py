@@ -27,6 +27,20 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer     {visibility: hidden;}
     header     {visibility: hidden;}
+    /* ── FIX: Remove sidebar collapse/expand arrow button ── */
+    button[data-testid="collapsedControl"],
+    button[kind="header"][data-testid="baseButton-header"] {
+        display: none !important;
+    }
+    section[data-testid="stSidebar"] {
+        min-width: 350px !important;
+        max-width: 350px !important;
+        transform: none !important;
+        visibility: visible !important;
+    }
+    section[data-testid="stSidebar"] > div {
+        width: 350px !important;
+    }
 
     /* KPI cards */
     .kpi-box   { border-radius:12px; padding:18px 10px;
