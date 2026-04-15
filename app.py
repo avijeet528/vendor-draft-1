@@ -1,6 +1,6 @@
 # ============================================================
 #  app.py — IT Procurement Dashboard
-#  PwC Brand | Collapsible Sidebar | Extensive Price Table
+#  PwC Brand | Always-Visible Sidebar | Extensive Price Table
 # ============================================================
 
 import streamlit as st
@@ -15,7 +15,7 @@ st.set_page_config(
     page_title="IT Procurement Dashboard",
     page_icon="📋",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",   # always open
 )
 
 # ════════════════════════════════════════════════════════════
@@ -37,7 +37,6 @@ def get_color(i):
     return CHART_COLORS[i % len(CHART_COLORS)]
 
 def vcolor(vendor):
-    """Safe vendor colour lookup — no escaping needed in f-strings."""
     return vendor_color_map.get(vendor, "#666666")
 
 # ════════════════════════════════════════════════════════════
@@ -46,82 +45,189 @@ def vcolor(vendor):
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&display=swap');
-html,body,[class*="css"]{
-    font-family:'Source Sans Pro','Helvetica Neue',Helvetica,Arial,sans-serif !important;
-    color:#2D2D2D;
+
+html, body, [class*="css"] {
+    font-family: 'Source Sans Pro','Helvetica Neue',Helvetica,Arial,sans-serif !important;
+    color: #2D2D2D;
 }
-.main{background-color:#F2F2F2;}
-#MainMenu{visibility:hidden;}
-footer{visibility:hidden;}
-header{visibility:hidden;}
+.main { background-color: #F2F2F2; }
+#MainMenu { visibility: hidden; }
+footer     { visibility: hidden; }
+header     { visibility: hidden; }
 
-.kpi-box{border-radius:0;padding:20px 12px;text-align:center;
-         color:white;border-top:4px solid rgba(255,255,255,0.25);}
-.kpi-value{font-size:2.4em;font-weight:700;margin:0;line-height:1.1;}
-.kpi-label{font-size:0.80em;opacity:0.90;margin-top:6px;font-weight:600;
-           letter-spacing:0.05em;text-transform:uppercase;}
+/* ── Hide the collapse arrow button completely ── */
+button[data-testid="collapsedControl"],
+button[kind="header"],
+section[data-testid="stSidebar"] > div:first-child button {
+    display: none !important;
+}
 
-.section-title{font-size:1.05em;font-weight:700;color:#2D2D2D;
-    border-left:4px solid #E03B24;padding-left:10px;
-    margin:18px 0 10px;text-transform:uppercase;letter-spacing:0.05em;}
+/* ── KPI ── */
+.kpi-box {
+    border-radius: 0;
+    padding: 20px 12px;
+    text-align: center;
+    color: white;
+    border-top: 4px solid rgba(255,255,255,0.25);
+}
+.kpi-value {
+    font-size: 2.4em;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.1;
+}
+.kpi-label {
+    font-size: 0.80em;
+    opacity: 0.90;
+    margin-top: 6px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
 
-.vendor-badge{display:inline-block;padding:3px 10px;border-radius:2px;
-    color:white;font-size:0.78em;font-weight:700;white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis;max-width:100%;
-    box-sizing:border-box;letter-spacing:0.02em;}
+/* ── Section title ── */
+.section-title {
+    font-size: 1.05em;
+    font-weight: 700;
+    color: #2D2D2D;
+    border-left: 4px solid #E03B24;
+    padding-left: 10px;
+    margin: 18px 0 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
 
-.price-table{width:100%;border-collapse:collapse;table-layout:fixed;
-    font-size:0.83em;font-family:'Source Sans Pro',sans-serif;}
-.price-table thead tr{background:#2D2D2D;color:white;}
-.price-table thead th{padding:10px 12px;text-align:left;font-weight:700;
-    font-size:0.82em;letter-spacing:0.04em;text-transform:uppercase;
-    border:none;word-break:break-word;}
-.price-table tbody tr:nth-child(even){background:#F9F9F9;}
-.price-table tbody tr:hover{background:#FFF0EE;}
-.price-table td{padding:9px 12px;border-bottom:1px solid #E8E8E8;
-    vertical-align:middle;word-break:break-word;}
-.price-table tr.line-item td{background:#FAFAFA;font-size:0.93em;
-    color:#7D7D7D;border-bottom:1px dashed #EEEEEE;}
-.price-table tr.line-item td:first-child{padding-left:28px;font-style:italic;}
-.price-table tr.total-row td{background:#F2F2F2;font-weight:700;
-    color:#2D2D2D;border-top:2px solid #E03B24;border-bottom:2px solid #E03B24;}
-.price-table tr.grand-total td{background:#2D2D2D;color:white;
-    font-weight:700;font-size:1.0em;border:none;}
+/* ── Vendor badge ── */
+.vendor-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 2px;
+    color: white;
+    font-size: 0.78em;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    box-sizing: border-box;
+    letter-spacing: 0.02em;
+}
 
-.price-table th:nth-child(1),.price-table td:nth-child(1){width:13%;}
-.price-table th:nth-child(2),.price-table td:nth-child(2){width:13%;}
-.price-table th:nth-child(3),.price-table td:nth-child(3){width:28%;}
-.price-table th:nth-child(4),.price-table td:nth-child(4){width:12%;}
-.price-table th:nth-child(5),.price-table td:nth-child(5){width:14%;}
-.price-table th:nth-child(6),.price-table td:nth-child(6){width:20%;}
+/* ── Price table ── */
+.price-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 0.83em;
+    font-family: 'Source Sans Pro', sans-serif;
+}
+.price-table thead tr { background: #2D2D2D; color: white; }
+.price-table thead th {
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 700;
+    font-size: 0.82em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: none;
+    word-break: break-word;
+}
+.price-table tbody tr:nth-child(even) { background: #F9F9F9; }
+.price-table tbody tr:hover           { background: #FFF0EE; }
+.price-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #E8E8E8;
+    vertical-align: middle;
+    word-break: break-word;
+}
+.price-table tr.line-item td {
+    background: #FAFAFA;
+    font-size: 0.93em;
+    color: #7D7D7D;
+    border-bottom: 1px dashed #EEEEEE;
+}
+.price-table tr.line-item td:first-child {
+    padding-left: 28px;
+    font-style: italic;
+}
+.price-table tr.total-row td {
+    background: #F2F2F2;
+    font-weight: 700;
+    color: #2D2D2D;
+    border-top: 2px solid #E03B24;
+    border-bottom: 2px solid #E03B24;
+}
+.price-table tr.grand-total td {
+    background: #2D2D2D;
+    color: white;
+    font-weight: 700;
+    font-size: 1.0em;
+    border: none;
+}
 
-section[data-testid="stSidebar"]{background-color:#2D2D2D !important;
-    border-right:3px solid #E03B24 !important;}
+/* fixed column widths */
+.price-table th:nth-child(1), .price-table td:nth-child(1) { width: 13%; }
+.price-table th:nth-child(2), .price-table td:nth-child(2) { width: 13%; }
+.price-table th:nth-child(3), .price-table td:nth-child(3) { width: 28%; }
+.price-table th:nth-child(4), .price-table td:nth-child(4) { width: 12%; }
+.price-table th:nth-child(5), .price-table td:nth-child(5) { width: 14%; }
+.price-table th:nth-child(6), .price-table td:nth-child(6) { width: 20%; }
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"] {
+    background-color: #2D2D2D !important;
+    border-right: 3px solid #E03B24 !important;
+    min-width: 280px !important;
+}
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p,
 section[data-testid="stSidebar"] span,
-section[data-testid="stSidebar"] div{color:#ECECEC !important;}
-section[data-testid="stSidebar"] div[data-baseweb="select"]{
-    background-color:#3D3D3D !important;border-radius:4px !important;
-    border:1px solid #555 !important;}
-section[data-testid="stSidebar"] div[data-baseweb="select"] *{
-    color:#ECECEC !important;}
-section[data-testid="stSidebar"] div[data-baseweb="input"]{
-    background-color:#3D3D3D !important;border-radius:4px !important;}
-section[data-testid="stSidebar"] div[data-baseweb="input"] input{
-    color:#ECECEC !important;}
-section[data-testid="stSidebar"] span[data-baseweb="tag"]{
-    background-color:#E03B24 !important;}
-section[data-testid="stSidebar"] span[data-baseweb="tag"] span{
-    color:white !important;}
+section[data-testid="stSidebar"] div {
+    color: #ECECEC !important;
+}
+section[data-testid="stSidebar"] div[data-baseweb="select"] {
+    background-color: #3D3D3D !important;
+    border-radius: 4px !important;
+    border: 1px solid #555 !important;
+}
+section[data-testid="stSidebar"] div[data-baseweb="select"] * {
+    color: #ECECEC !important;
+}
+section[data-testid="stSidebar"] div[data-baseweb="input"] {
+    background-color: #3D3D3D !important;
+    border-radius: 4px !important;
+}
+section[data-testid="stSidebar"] div[data-baseweb="input"] input {
+    color: #ECECEC !important;
+}
+section[data-testid="stSidebar"] span[data-baseweb="tag"] {
+    background-color: #E03B24 !important;
+}
+section[data-testid="stSidebar"] span[data-baseweb="tag"] span {
+    color: white !important;
+}
 
-div[data-testid="stExpander"]{border:1px solid #E0E0E0 !important;
-    border-radius:2px !important;background:white !important;}
-div[data-testid="stExpander"] summary p{font-weight:700 !important;
-    font-size:0.95em !important;color:#2D2D2D !important;}
-button[data-baseweb="tab"]{font-weight:600 !important;color:#7D7D7D !important;}
-button[data-baseweb="tab"][aria-selected="true"]{
-    color:#E03B24 !important;border-bottom:3px solid #E03B24 !important;}
+/* ── Expander ── */
+div[data-testid="stExpander"] {
+    border: 1px solid #E0E0E0 !important;
+    border-radius: 2px !important;
+    background: white !important;
+}
+div[data-testid="stExpander"] summary p {
+    font-weight: 700 !important;
+    font-size: 0.95em !important;
+    color: #2D2D2D !important;
+}
+
+/* ── Tabs ── */
+button[data-baseweb="tab"] {
+    font-weight: 600 !important;
+    color: #7D7D7D !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #E03B24 !important;
+    border-bottom: 3px solid #E03B24 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -226,7 +332,8 @@ def extract_all_prices(url):
             unique = list(dict.fromkeys(all_p))[:15]
             result["line_items"] = [("Price found", p) for p in unique]
             if unique:
-                result["total"] = max(unique, key=lambda x: _parse_num(x))
+                result["total"] = max(
+                    unique, key=lambda x: _parse_num(x))
 
     except Exception as e:
         result["raw_text"] = f"Error: {e}"
@@ -360,14 +467,13 @@ df_master, df_exploded = load_data()
 if df_master is None or df_exploded is None:
     st.stop()
 
-# Build AFTER load so vcolor() can use it
 vendor_color_map = {
     v: get_color(i)
     for i, v in enumerate(sorted(df_master["Vendor"].unique()))
 }
 
 # ════════════════════════════════════════════════════════════
-# SIDEBAR
+# SIDEBAR — always visible, collapse arrow hidden via CSS
 # ════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("""
@@ -386,6 +492,7 @@ with st.sidebar:
                 margin:0 0 16px;border-radius:2px'></div>
     """, unsafe_allow_html=True)
 
+    # ── Category ─────────────────────────────────────────────
     st.markdown(
         "<p style='color:#ECECEC;font-weight:700;font-size:0.8em;"
         "text-transform:uppercase;letter-spacing:0.06em;"
@@ -397,6 +504,7 @@ with st.sidebar:
     selected_cat = st.selectbox(
         "Category", all_cats, label_visibility="collapsed")
 
+    # ── Vendor scoped to category ─────────────────────────────
     st.markdown(
         "<p style='color:#ECECEC;font-weight:700;font-size:0.8em;"
         "text-transform:uppercase;letter-spacing:0.06em;"
@@ -414,12 +522,14 @@ with st.sidebar:
         "<div style='height:1px;background:#444;margin:14px 0'></div>",
         unsafe_allow_html=True)
 
+    # ── Build filtered data ───────────────────────────────────
     d_filt = df_exploded.copy()
     if selected_cat    != "All":
         d_filt = d_filt[d_filt["Category"] == selected_cat]
     if selected_vendor != "All":
         d_filt = d_filt[d_filt["Vendor"]   == selected_vendor]
 
+    # ── Service search ────────────────────────────────────────
     st.markdown(
         "<p style='color:#ECECEC;font-weight:700;font-size:0.8em;"
         "text-transform:uppercase;letter-spacing:0.06em;"
@@ -654,8 +764,7 @@ if not selected_svcs:
         f"border-left:4px solid {PWC_RED};"
         f"padding:16px 20px;border-radius:2px;"
         f"color:{PWC_GREY}'>"
-        f"<b>👈 Open the sidebar (▶ arrow on the left) "
-        f"to select services.</b><br>"
+        f"<b>👈 Select one or more services from the sidebar.</b><br>"
         f"<span style='font-size:0.9em'>"
         f"Filter by Category → Vendor updates automatically → "
         f"Pick one or more services → "
@@ -692,9 +801,8 @@ else:
                         "🔵 Vendors with partial coverage",
                         expanded=False):
                     for v in vendors_some:
-                        cov  = vsmap[v].intersection(set(selected_svcs))
-                        # Pre-compute color — avoids escape issues
-                        col  = vcolor(v)
+                        cov = vsmap[v].intersection(set(selected_svcs))
+                        col = vcolor(v)
                         st.markdown(
                             f"<span class='vendor-badge' "
                             f"style='background:{col}'>{v}</span>"
@@ -705,9 +813,6 @@ else:
 
         has_price = "Quoted Price" in d_sel.columns
 
-        # ════════════════════════════════════════════════════
-        # PER-SERVICE TABLES
-        # ════════════════════════════════════════════════════
         for svc in selected_svcs:
             d_svc = (
                 d_sel[d_sel["Service"] == svc]
@@ -732,14 +837,13 @@ else:
                         f"<span class='vendor-badge' "
                         f"style='background:{col}'>{v}</span>")
                 st.markdown(
-                    f"<div style='margin-bottom:14px'>"
-                    f"<b>Vendors offering this service:</b>"
-                    f"&nbsp;"
+                    "<div style='margin-bottom:14px'>"
+                    "<b>Vendors offering this service:</b>&nbsp;"
                     + " ".join(badge_parts)
                     + "</div>",
                     unsafe_allow_html=True)
 
-                # ── Price table ───────────────────────────────
+                # Price table
                 tbl = [
                     "<table class='price-table'><thead><tr>"
                     "<th>Vendor</th>"
@@ -806,13 +910,12 @@ else:
                         f"<td colspan='2'>{link_html}</td>"
                         f"</tr>")
 
-                    # Extracted line items
                     ekey = f"extracted_{fname[:40]}"
                     rkey = f"run_{ekey}"
                     if st.session_state.get(rkey):
-                        pr     = st.session_state.get(
+                        pr    = st.session_state.get(
                             ekey, {"line_items": [], "total": ""})
-                        items  = pr.get("line_items", [])
+                        items = pr.get("line_items", [])
                         etotal = pr.get("total", "")
 
                         if items:
@@ -847,8 +950,8 @@ else:
                     tbl.append(
                         "<tr class='grand-total'>"
                         "<td colspan='4'>"
-                        "<b>GRAND TOTAL — all extracted files "
-                        "for this service</b></td>"
+                        "<b>GRAND TOTAL — all extracted files"
+                        " for this service</b></td>"
                         "<td></td>"
                         f"<td style='font-size:1.1em'>"
                         f"≈ {grand_total_num:,.2f}</td>"
@@ -857,7 +960,7 @@ else:
                 tbl.append("</tbody></table>")
                 st.markdown("".join(tbl), unsafe_allow_html=True)
 
-                # ── Extract price buttons ─────────────────────
+                # Extract buttons
                 st.markdown(
                     f"<div style='margin-top:14px;"
                     f"padding:10px 14px;"
@@ -869,8 +972,7 @@ else:
                     f"letter-spacing:0.05em;color:{PWC_DARK}'>"
                     f"💰 Extract Prices from Files</b><br>"
                     f"<span style='font-size:0.80em;color:{PWC_GREY}'>"
-                    f"Click a button to extract line-item prices "
-                    f"from the quotation file. "
+                    f"Click a button to extract line-item prices. "
                     f"Table updates automatically."
                     f"</span></div>",
                     unsafe_allow_html=True)
@@ -888,13 +990,13 @@ else:
                     if not burl or burl == "nan":
                         burl = str(brow.get("File URL",  "")).strip()
 
-                    bfname  = str(brow.get("File Name", "")).strip()
-                    bkey    = f"extracted_{bfname[:40]}"
-                    rkey    = f"run_{bkey}"
-                    blabel  = (
+                    bfname = str(brow.get("File Name", "")).strip()
+                    bkey   = f"extracted_{bfname[:40]}"
+                    rkey   = f"run_{bkey}"
+                    blabel = (
                         bfname[:28] + "…"
                         if len(bfname) > 28 else bfname)
-                    cidx    = bi % max(num_cols, 1)
+                    cidx = bi % max(num_cols, 1)
 
                     if burl and burl.startswith("http"):
                         if st.session_state.get(rkey):
@@ -910,8 +1012,7 @@ else:
                                     key=f"re_{bkey}_{bi}_{svc[:10]}",
                                     help=f"Re-run for {bfname}",
                                 ):
-                                    with st.spinner(
-                                            f"Re-extracting {blabel}…"):
+                                    with st.spinner(f"Re-extracting…"):
                                         res = extract_all_prices(burl)
                                         st.session_state[bkey] = res
                                         st.session_state[rkey] = True
@@ -924,8 +1025,7 @@ else:
                                     help=f"Extract from {bfname}",
                                     type="primary",
                                 ):
-                                    with st.spinner(
-                                            f"Extracting {blabel}…"):
+                                    with st.spinner(f"Extracting…"):
                                         res = extract_all_prices(burl)
                                         st.session_state[bkey] = res
                                         st.session_state[rkey] = True
@@ -977,12 +1077,12 @@ else:
                     ]
                     running = 0.0
                     for er in ext_results:
-                        ec      = vcolor(er["vendor"])
-                        vbadge  = (
+                        ec     = vcolor(er["vendor"])
+                        vbadge = (
                             f"<span class='vendor-badge' "
                             f"style='background:{ec}'>"
                             f"{er['vendor']}</span>")
-                        fn_s    = (
+                        fn_s   = (
                             er["file"][:45] + "…"
                             if len(er["file"]) > 45 else er["file"])
                         n_items = len(er["items"])
@@ -1022,7 +1122,7 @@ else:
                     sum_tbl.append("</tbody></table>")
                     st.markdown("".join(sum_tbl), unsafe_allow_html=True)
 
-        # Shared services summary
+        # Shared services
         shared_svcs = [
             s for s in selected_svcs
             if d_sel[d_sel["Service"] == s]["Vendor"].nunique() > 1]
