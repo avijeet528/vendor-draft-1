@@ -73,7 +73,11 @@ div, p, span, td, th, label, button {
     background-color: #F3F3F3;
     padding-top: 1.5rem;
 }
-#MainMenu, footer, header { visibility: hidden; }
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+header { visibility: hidden; }
+[data-testid="collapsedControl"] { display: block !important; }
+section[data-testid="stSidebar"] { display: block !important; visibility: visible !important; }
 
 /* KPI */
 .kpi-box {
@@ -520,6 +524,18 @@ def sb_label(txt):
 
 
 with st.sidebar:
+def sb_label(txt):
+    st.markdown(
+        "<p style='color:#F0F0F0;font-weight:700;font-size:0.88em;"
+        "margin:12px 0 4px;letter-spacing:0.5px;"
+        "text-transform:uppercase'>{}</p>".format(txt),
+        unsafe_allow_html=True,
+    )
+
+
+with st.sidebar:
+
+    # ── Logo / Title ──────────────────────────────────────────
     st.markdown(
         "<div style='text-align:center;padding:22px 0 16px'>"
         "<div style='font-size:2.2em'>📋</div>"
@@ -532,6 +548,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    # ── FILTER 1: Category ────────────────────────────────────
     sb_label("📂 Category")
     all_cats = ["All"] + sorted([
         c for c in df_master["Category"].unique()
@@ -540,6 +557,7 @@ with st.sidebar:
     selected_cat = st.selectbox(
         "Category", all_cats, label_visibility="collapsed")
 
+    # ── FILTER 2: Vendor (scoped to category) ─────────────────
     sb_label("🏢 Vendor")
     vpool = (df_master if selected_cat == "All"
              else df_master[df_master["Category"] == selected_cat])
@@ -554,15 +572,17 @@ with st.sidebar:
         "<hr style='border-color:#555;margin:16px 0'>",
         unsafe_allow_html=True)
 
+    # ── Build filtered data ───────────────────────────────────
     d_filt = df_exploded.copy()
     if selected_cat    != "All":
         d_filt = d_filt[d_filt["Category"] == selected_cat]
     if selected_vendor != "All":
         d_filt = d_filt[d_filt["Vendor"]   == selected_vendor]
 
+    # ── FILTER 3: Service search ──────────────────────────────
     sb_label("🔍 Search Services")
     svc_search = st.text_input(
-        "Search", placeholder="e.g. Cisco, Oracle…",
+        "Search", placeholder="e.g. Cisco, Oracle, M365…",
         label_visibility="collapsed")
 
     avail = sorted([s for s in d_filt["Service"].unique()
@@ -570,24 +590,32 @@ with st.sidebar:
     if svc_search:
         avail = [s for s in avail if svc_search.lower() in s.lower()]
 
+    # ── FILTER 4: Service multiselect ─────────────────────────
     sb_label("🛠 Select Services ({} available)".format(len(avail)))
     selected_svcs = st.multiselect(
-        "Services", options=avail, default=[],
-        label_visibility="collapsed")
+        "Services",
+        options=avail,
+        default=[],
+        label_visibility="collapsed",
+        help="Select one or more services to see vendor & quotation details",
+    )
 
     st.markdown(
         "<hr style='border-color:#555;margin:16px 0'>",
         unsafe_allow_html=True)
+
+    # ── Stats footer ──────────────────────────────────────────
     st.markdown(
         "<p style='color:#888;font-size:0.80em;margin:3px 0'>"
-        "📄 {} quotes &nbsp;|&nbsp; "
-        "🛠 {} services &nbsp;|&nbsp; "
+        "📄 {} total quotes</p>"
+        "<p style='color:#888;font-size:0.80em;margin:3px 0'>"
+        "🛠 {} unique services</p>"
+        "<p style='color:#888;font-size:0.80em;margin:3px 0'>"
         "🏢 {} vendors</p>".format(
             len(df_master),
             df_exploded["Service"].nunique(),
             df_master["Vendor"].nunique()),
         unsafe_allow_html=True)
-
 
 # ════════════════════════════════════════════════════════════
 # MAIN HEADER
