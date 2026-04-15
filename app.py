@@ -82,6 +82,7 @@ def get_color(i):
 # DATA LOADING
 # ════════════════════════════════════════════════════════════
 @st.cache_data
+@st.cache_data
 def load_data():
     FILE_PATH = "Master Catalog.xlsx"
 
@@ -150,12 +151,21 @@ def load_data():
         )
     ].copy()
 
-    df.fillna("", inplace=True)
+    # ── FIX: fillna column by column based on dtype ───────────
+    # String/object columns → fill with ""
+    # Numeric columns       → fill with 0 or leave as-is
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].fillna("").astype(str).str.strip()
+        else:
+            # Convert numeric cols to string for display safety
+            df[col] = df[col].fillna("").astype(str).str.strip()
+
     df.reset_index(drop=True, inplace=True)
 
-    # ── Parse services ───────────────────────────────────────
+    # ── Parse services from Comments column ──────────────────
     def parse_services(raw_val):
-        if not raw_val or str(raw_val).strip() == "":
+        if not raw_val or str(raw_val).strip() in ["", "nan"]:
             return ["(unspecified)"]
         parts = [s.strip() for s in str(raw_val).split("\n") if s.strip()]
         return parts if parts else ["(unspecified)"]
@@ -168,11 +178,11 @@ def load_data():
     df_exp["Service"] = df_exp["Service"].str.strip()
     df_exp = df_exp[
         (df_exp["Service"] != "") &
-        (df_exp["Service"] != "(unspecified)")
+        (df_exp["Service"] != "(unspecified)") &
+        (df_exp["Service"] != "nan")
     ].reset_index(drop=True)
 
     return df, df_exp
-
 
 # ════════════════════════════════════════════════════════════
 # LOAD
