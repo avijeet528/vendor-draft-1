@@ -1,6 +1,5 @@
 # ============================================================
 #  app.py — IT Procurement Service Dashboard (Streamlit)
-#  Upload to GitHub + deploy on share.streamlit.io for free
 # ============================================================
 
 import streamlit as st
@@ -10,7 +9,6 @@ import plotly.graph_objects as go
 from collections import defaultdict
 import os
 
-# ── Page config ──────────────────────────────────────────────
 st.set_page_config(
     page_title="IT Procurement Dashboard",
     page_icon="📋",
@@ -26,6 +24,7 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
+    /* ── KPI cards ── */
     .kpi-box {
         border-radius: 12px;
         padding: 18px 10px;
@@ -43,24 +42,60 @@ st.markdown("""
         opacity: 0.88;
         margin-top: 5px;
     }
+
+    /* ── Sidebar background ── */
+    section[data-testid="stSidebar"] {
+        background-color: #2c3e50 !important;
+    }
+
+    /* ── FIX: Sidebar label text → light color ── */
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] .stMarkdown span,
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] span,
+    section[data-testid="stSidebar"] div {
+        color: #ecf0f1 !important;
+    }
+
+    /* ── FIX: Dropdown selected text → dark (readable) ── */
+    section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] div,
+    section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] span,
+    section[data-testid="stSidebar"] .stSelectbox [data-testid="stMarkdownContainer"] p {
+        color: #2c3e50 !important;
+        font-weight: 600;
+    }
+
+    /* ── FIX: Multiselect tags text ── */
+    section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] span {
+        color: white !important;
+    }
+
+    /* ── FIX: Multiselect input text ── */
+    section[data-testid="stSidebar"] .stMultiSelect div[data-baseweb="select"] input {
+        color: #2c3e50 !important;
+    }
+
+    /* ── Sidebar input boxes background ── */
+    section[data-testid="stSidebar"] div[data-baseweb="select"] {
+        background-color: white !important;
+        border-radius: 6px;
+    }
+    section[data-testid="stSidebar"] div[data-baseweb="input"] {
+        background-color: white !important;
+        border-radius: 6px;
+    }
+
+    /* ── Sidebar caption text ── */
+    section[data-testid="stSidebar"] .stCaptionContainer p {
+        color: #95a5a6 !important;
+        font-size: 0.82em;
+    }
+
+    /* ── Expander ── */
     div[data-testid="stExpander"] details summary p {
         font-size: 1em;
         font-weight: 600;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: #2c3e50;
-    }
-    section[data-testid="stSidebar"] * {
-        color: white !important;
-    }
-    section[data-testid="stSidebar"] .stSelectbox label,
-    section[data-testid="stSidebar"] .stTextInput label,
-    section[data-testid="stSidebar"] .stMultiSelect label {
-        color: #ecf0f1 !important;
-        font-weight: 600;
-    }
-    section[data-testid="stSidebar"] .stMarkdown p {
-        color: #bdc3c7 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -74,7 +109,6 @@ COLORS = [
     "#7f8c8d","#c0392b","#3498db","#2ecc71","#9b59b6",
     "#e91e63","#00bcd4","#ff5722","#795548","#607d8b",
 ]
-
 def get_color(i):
     return COLORS[i % len(COLORS)]
 
@@ -82,58 +116,49 @@ def get_color(i):
 # DATA LOADING
 # ════════════════════════════════════════════════════════════
 @st.cache_data
-@st.cache_data
 def load_data():
     FILE_PATH = "Master Catalog.xlsx"
 
     if not os.path.exists(FILE_PATH):
-        st.error(
-            f"❌ File not found: '{FILE_PATH}'. "
-            "Make sure Master Catalog.xlsx is in the same folder as app.py"
-        )
+        st.error(f"❌ File not found: '{FILE_PATH}'.")
         return None, None
 
-    # ── Find header row ──────────────────────────────────────
     raw = pd.read_excel(FILE_PATH, engine="openpyxl", header=None)
+
     header_row = None
     for i, row in raw.iterrows():
-        row_vals = [
-            str(v).strip().lower()
-            for v in row.values if pd.notna(v)
-        ]
+        row_vals = [str(v).strip().lower() for v in row.values if pd.notna(v)]
         if (any("category" in v for v in row_vals) and
                 any("file" in v for v in row_vals)):
             header_row = i
             break
 
     if header_row is None:
-        st.error("❌ Could not detect header row in Excel file.")
+        st.error("❌ Could not detect header row.")
         return None, None
 
-    # ── Re-read with correct header ──────────────────────────
     df = pd.read_excel(FILE_PATH, engine="openpyxl", header=header_row)
     df = df.loc[:, df.columns.notna()]
     df.columns = [str(c).strip() for c in df.columns]
     df.dropna(how="all", inplace=True)
 
-    # ── Map columns ──────────────────────────────────────────
     col_map = {}
     for c in df.columns:
         cl = str(c).lower().strip()
         if cl == "category":
-            col_map["Category"]      = c
+            col_map["Category"]     = c
         elif "vendor" in cl or "type" in cl:
-            col_map["Vendor"]        = c
+            col_map["Vendor"]       = c
         elif cl == "file name":
-            col_map["File Name"]     = c
+            col_map["File Name"]    = c
         elif cl == "file link":
-            col_map["File Link"]     = c
+            col_map["File Link"]    = c
         elif cl == "file url":
-            col_map["File URL"]      = c
+            col_map["File URL"]     = c
         elif "comment" in cl:
-            col_map["Comments"]      = c
+            col_map["Comments"]     = c
         elif "quoted" in cl or "price" in cl:
-            col_map["Quoted Price"]  = c
+            col_map["Quoted Price"] = c
 
     df.rename(columns={v: k for k, v in col_map.items()}, inplace=True)
 
@@ -143,7 +168,6 @@ def load_data():
             keep.append(extra)
     df = df[[c for c in keep if c in df.columns]].copy()
 
-    # ── Drop empty rows ───────────────────────────────────────
     df = df[
         ~(
             df["Category"].astype(str).str.strip().isin(["", "nan"]) &
@@ -151,19 +175,12 @@ def load_data():
         )
     ].copy()
 
-    # ── FIX: fillna column by column based on dtype ───────────
-    # String/object columns → fill with ""
-    # Numeric columns       → fill with 0 or leave as-is
+    # Safe fillna — column by column
     for col in df.columns:
-        if df[col].dtype == object:
-            df[col] = df[col].fillna("").astype(str).str.strip()
-        else:
-            # Convert numeric cols to string for display safety
-            df[col] = df[col].fillna("").astype(str).str.strip()
+        df[col] = df[col].fillna("").astype(str).str.strip()
 
     df.reset_index(drop=True, inplace=True)
 
-    # ── Parse services from Comments column ──────────────────
     def parse_services(raw_val):
         if not raw_val or str(raw_val).strip() in ["", "nan"]:
             return ["(unspecified)"]
@@ -172,7 +189,6 @@ def load_data():
 
     df["Services List"] = df["Comments"].apply(parse_services)
 
-    # ── Explode: one row per service ─────────────────────────
     df_exp = df.explode("Services List").copy()
     df_exp.rename(columns={"Services List": "Service"}, inplace=True)
     df_exp["Service"] = df_exp["Service"].str.strip()
@@ -184,11 +200,11 @@ def load_data():
 
     return df, df_exp
 
+
 # ════════════════════════════════════════════════════════════
-# LOAD
+# LOAD DATA
 # ════════════════════════════════════════════════════════════
 df_master, df_exploded = load_data()
-
 if df_master is None or df_exploded is None:
     st.stop()
 
@@ -196,6 +212,42 @@ vendor_color_map = {
     v: get_color(i)
     for i, v in enumerate(sorted(df_master["Vendor"].unique()))
 }
+
+# ════════════════════════════════════════════════════════════
+# HELPER: build clickable HTML link for file name/link
+# ════════════════════════════════════════════════════════════
+def make_file_link(file_name: str, file_link: str = "") -> str:
+    """
+    Returns an HTML anchor tag.
+    - If file_link is a valid URL  → link text = file_name, href = file_link
+    - If file_name looks like URL  → link text = file_name, href = file_name
+    - Otherwise                    → plain file_name text (no link)
+    """
+    name = str(file_name).strip()
+    link = str(file_link).strip()
+
+    # Determine the URL to use
+    url = ""
+    if link and link not in ["", "nan"] and link.startswith("http"):
+        url = link
+    elif name.startswith("http"):
+        url = name
+
+    if url:
+        short = name if len(name) <= 55 else name[:52] + "…"
+        return (
+            f"<a href='{url}' target='_blank' "
+            f"style='color:#2980b9;text-decoration:underline;"
+            f"font-family:monospace;font-size:0.82em'>{short}</a>"
+        )
+    else:
+        # Plain filename (not a URL) — styled but not linked
+        short = name if len(name) <= 55 else name[:52] + "…"
+        return (
+            f"<span style='font-family:monospace;color:#2c3e50;"
+            f"font-size:0.82em'>{short}</span>"
+        )
+
 
 # ════════════════════════════════════════════════════════════
 # SIDEBAR
@@ -215,8 +267,11 @@ with st.sidebar:
     <hr style='border-color:#3d5166;margin:0 0 16px'>
     """, unsafe_allow_html=True)
 
-    # ── Category ─────────────────────────────────────────────
-    st.markdown("**📂 Category**")
+    st.markdown(
+        "<p style='color:#ecf0f1;font-weight:700;margin-bottom:4px'>"
+        "📂 Category</p>",
+        unsafe_allow_html=True
+    )
     all_cats = ["All"] + sorted([
         c for c in df_master["Category"].unique()
         if str(c).strip() not in ["", "nan"]
@@ -225,8 +280,11 @@ with st.sidebar:
         "Category", all_cats, label_visibility="collapsed"
     )
 
-    # ── Vendor (scoped to selected category) ─────────────────
-    st.markdown("**🏢 Vendor**")
+    st.markdown(
+        "<p style='color:#ecf0f1;font-weight:700;margin:10px 0 4px'>"
+        "🏢 Vendor</p>",
+        unsafe_allow_html=True
+    )
     if selected_cat == "All":
         vendor_pool = df_master
     else:
@@ -245,15 +303,18 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-    # ── Build filtered data ───────────────────────────────────
+    # Filtered data
     d_filt = df_exploded.copy()
     if selected_cat != "All":
         d_filt = d_filt[d_filt["Category"] == selected_cat]
     if selected_vendor != "All":
         d_filt = d_filt[d_filt["Vendor"] == selected_vendor]
 
-    # ── Service search ────────────────────────────────────────
-    st.markdown("**🔍 Search Services**")
+    st.markdown(
+        "<p style='color:#ecf0f1;font-weight:700;margin-bottom:4px'>"
+        "🔍 Search Services</p>",
+        unsafe_allow_html=True
+    )
     svc_search = st.text_input(
         "Search", placeholder="e.g. Cisco, Oracle, M365…",
         label_visibility="collapsed"
@@ -264,12 +325,16 @@ with st.sidebar:
         if str(s).strip() not in ["", "nan"]
     ])
     if svc_search:
-        available_svcs = [
-            s for s in available_svcs
-            if svc_search.lower() in s.lower()
-        ]
+        available_svcs = [s for s in available_svcs
+                          if svc_search.lower() in s.lower()]
 
-    st.markdown(f"**🛠 Select Services** `{len(available_svcs)} available`")
+    st.markdown(
+        f"<p style='color:#ecf0f1;font-weight:700;margin:10px 0 4px'>"
+        f"🛠 Select Services "
+        f"<span style='font-weight:400;color:#95a5a6'>"
+        f"({len(available_svcs)} available)</span></p>",
+        unsafe_allow_html=True
+    )
     selected_svcs = st.multiselect(
         "Services",
         options=available_svcs,
@@ -282,19 +347,25 @@ with st.sidebar:
         "<hr style='border-color:#3d5166;margin:14px 0'>",
         unsafe_allow_html=True
     )
-    st.caption(f"📄 {len(df_master)} total quotes")
-    st.caption(f"🛠 {df_exploded['Service'].nunique()} unique services")
-    st.caption(f"🏢 {df_master['Vendor'].nunique()} vendors")
+    st.markdown(
+        f"<p style='color:#95a5a6;font-size:0.82em;margin:2px 0'>"
+        f"📄 {len(df_master)} total quotes</p>"
+        f"<p style='color:#95a5a6;font-size:0.82em;margin:2px 0'>"
+        f"🛠 {df_exploded['Service'].nunique()} unique services</p>"
+        f"<p style='color:#95a5a6;font-size:0.82em;margin:2px 0'>"
+        f"🏢 {df_master['Vendor'].nunique()} vendors</p>",
+        unsafe_allow_html=True
+    )
 
 # ════════════════════════════════════════════════════════════
-# MAIN PAGE HEADER
+# MAIN HEADER
 # ════════════════════════════════════════════════════════════
 st.markdown("""
 <div style='background:linear-gradient(135deg,#2c3e50 0%,#3d5a73 100%);
             color:white;padding:20px 28px;border-radius:14px;
             margin-bottom:22px;box-shadow:0 4px 12px rgba(0,0,0,0.15)'>
     <h1 style='margin:0;font-size:1.65em;font-weight:800'>
-        📋 IT Procurement — Service & Vendor Dashboard
+        📋 IT Procurement — Service &amp; Vendor Dashboard
     </h1>
     <p style='margin:7px 0 0;opacity:0.72;font-size:0.9em'>
         Filter by Category → Vendor auto-updates →
@@ -329,18 +400,13 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ════════════════════════════════════════════════════════════
 tab_charts, tab_table = st.tabs(["📊 Charts", "📄 Data Table"])
 
-# ────────────────────────────────────────────────────────────
 with tab_charts:
-
     col_l, col_r = st.columns(2)
 
-    # Chart 1 — Services shared across vendors
     with col_l:
         shared = (
             d_filt.groupby("Service")["Vendor"].nunique()
-            .sort_values(ascending=False)
-            .head(20)
-            .reset_index()
+            .sort_values(ascending=False).head(20).reset_index()
         )
         shared.columns = ["Service", "Vendor Count"]
         shared["Color"] = shared["Vendor Count"].apply(
@@ -366,17 +432,14 @@ with tab_charts:
         )
         st.plotly_chart(fig1, use_container_width=True)
 
-    # Chart 2 — Unique services per vendor
     with col_r:
         svc_per_vendor = (
             d_filt.groupby("Vendor")["Service"].nunique()
-            .sort_values(ascending=False)
-            .reset_index()
+            .sort_values(ascending=False).reset_index()
         )
         svc_per_vendor.columns = ["Vendor", "Service Count"]
         svc_per_vendor["Color"] = [
-            vendor_color_map.get(v, "#999")
-            for v in svc_per_vendor["Vendor"]
+            vendor_color_map.get(v, "#999") for v in svc_per_vendor["Vendor"]
         ]
         fig2 = go.Figure(go.Bar(
             x=svc_per_vendor["Vendor"],
@@ -399,20 +462,16 @@ with tab_charts:
 
     col_l2, col_r2 = st.columns(2)
 
-    # Chart 3 — Heatmap vendor x service
     with col_l2:
-        top_svcs = (
+        top_svcs     = (
             d_filt.groupby("Service")["Vendor"].nunique()
-            .sort_values(ascending=False)
-            .head(15).index.tolist()
+            .sort_values(ascending=False).head(15).index.tolist()
         )
         vendors_list = sorted(d_filt["Vendor"].unique())
-
         if top_svcs and vendors_list:
             matrix = pd.DataFrame(0, index=vendors_list, columns=top_svcs)
             for _, row in d_filt[d_filt["Service"].isin(top_svcs)].iterrows():
                 matrix.loc[row["Vendor"], row["Service"]] += 1
-
             fig3 = px.imshow(
                 matrix,
                 color_continuous_scale="YlOrRd",
@@ -431,47 +490,35 @@ with tab_charts:
         else:
             st.info("No data available for heatmap.")
 
-    # Chart 4 — Category pie
     with col_r2:
         cat_counts = (
             d_filt.drop_duplicates(subset=["Category", "File Name"])
-            .groupby("Category").size()
-            .reset_index()
+            .groupby("Category").size().reset_index()
         )
         cat_counts.columns = ["Category", "Count"]
-
         if not cat_counts.empty:
             fig4 = px.pie(
-                cat_counts,
-                names="Category",
-                values="Count",
+                cat_counts, names="Category", values="Count",
                 title="🥧 Quote Files by Category",
-                hole=0.45,
-                color_discrete_sequence=COLORS,
+                hole=0.45, color_discrete_sequence=COLORS,
             )
             fig4.update_layout(
                 height=500,
                 margin=dict(l=10, r=10, t=45, b=10),
                 paper_bgcolor="#f8f9fa",
                 font=dict(size=11),
-                legend=dict(font=dict(size=10)),
             )
-            fig4.update_traces(
-                textposition="inside",
-                textinfo="percent+label"
-            )
+            fig4.update_traces(textposition="inside", textinfo="percent+label")
             st.plotly_chart(fig4, use_container_width=True)
         else:
-            st.info("No data available for pie chart.")
+            st.info("No data for pie chart.")
 
-# ────────────────────────────────────────────────────────────
 with tab_table:
     dm_display = df_master.copy()
     if selected_cat != "All":
         dm_display = dm_display[dm_display["Category"] == selected_cat]
     if selected_vendor != "All":
         dm_display = dm_display[dm_display["Vendor"] == selected_vendor]
-
     st.dataframe(
         dm_display.drop(columns=["Services List"], errors="ignore"),
         use_container_width=True,
@@ -496,54 +543,48 @@ else:
     d_sel = d_filt[d_filt["Service"].isin(selected_svcs)].copy()
 
     if d_sel.empty:
-        st.warning(
-            "⚠️ No results found for the selected service(s) "
-            "under current filters."
-        )
+        st.warning("⚠️ No results found for selected service(s).")
     else:
-        # ── Vendor coverage map ───────────────────────────────
         vendor_svc_map = defaultdict(set)
         for _, row in d_sel.iterrows():
             vendor_svc_map[row["Vendor"]].add(row["Service"])
 
-        vendors_all  = sorted([
-            v for v, s in vendor_svc_map.items()
-            if set(selected_svcs).issubset(s)
-        ])
-        vendors_some = sorted([
-            v for v, s in vendor_svc_map.items()
-            if not set(selected_svcs).issubset(s)
-        ])
+        vendors_all  = sorted([v for v, s in vendor_svc_map.items()
+                                if set(selected_svcs).issubset(s)])
+        vendors_some = sorted([v for v, s in vendor_svc_map.items()
+                                if not set(selected_svcs).issubset(s)])
 
-        # ── Summary banners ───────────────────────────────────
         if len(selected_svcs) > 1:
             if vendors_all:
-                vendor_names = " · ".join([f"**{v}**" for v in vendors_all])
+                names = " · ".join([f"**{v}**" for v in vendors_all])
                 st.success(
                     f"✅ **{len(vendors_all)} vendor(s) offer ALL "
-                    f"{len(selected_svcs)} selected services:** {vendor_names}"
+                    f"{len(selected_svcs)} services:** {names}"
                 )
             else:
                 st.warning(
                     f"⚠️ No single vendor covers all {len(selected_svcs)} "
-                    "selected services. See per-service breakdown below."
+                    "selected services."
                 )
-
             if vendors_some:
-                with st.expander("🔵 Vendors with partial coverage", expanded=False):
+                with st.expander("🔵 Vendors with partial coverage",
+                                 expanded=False):
                     for v in vendors_some:
-                        covered = vendor_svc_map[v].intersection(set(selected_svcs))
+                        covered = vendor_svc_map[v].intersection(
+                            set(selected_svcs)
+                        )
                         c = vendor_color_map.get(v, "#666")
                         st.markdown(
                             f"<span style='background:{c};color:white;"
                             f"padding:3px 10px;border-radius:10px;"
                             f"font-size:0.88em;font-weight:bold'>{v}</span>"
-                            f" &nbsp; covers **{len(covered)}/{len(selected_svcs)}**: "
+                            f" &nbsp; covers **{len(covered)}/"
+                            f"{len(selected_svcs)}**: "
                             f"_{', '.join(sorted(covered))}_",
                             unsafe_allow_html=True,
                         )
 
-        # ── Per-service expandable sections ───────────────────
+        # ── Per-service sections ──────────────────────────────
         st.markdown("#### 📄 Vendor & Quotation File — per Service")
 
         for svc in selected_svcs:
@@ -555,8 +596,7 @@ else:
             vendor_count = d_svc["Vendor"].nunique()
             shared_tag   = (
                 "⚠️ SHARED BY MULTIPLE VENDORS"
-                if vendor_count > 1
-                else "✅ SINGLE VENDOR"
+                if vendor_count > 1 else "✅ SINGLE VENDOR"
             )
 
             with st.expander(
@@ -564,7 +604,7 @@ else:
                 f"{len(d_svc)} file(s)  [{shared_tag}]",
                 expanded=True,
             ):
-                # Vendor badge row
+                # Vendor badges
                 badges = " ".join([
                     f"<span style='background:{vendor_color_map.get(v,'#666')};"
                     f"color:white;padding:4px 13px;border-radius:12px;"
@@ -572,23 +612,120 @@ else:
                     for v in sorted(d_svc["Vendor"].unique())
                 ])
                 st.markdown(
-                    f"<div style='margin-bottom:10px'>"
-                    f"<b>Vendors offering this service:</b>&nbsp; {badges}</div>",
+                    f"<div style='margin-bottom:12px'>"
+                    f"<b>Vendors offering this service:</b>&nbsp;{badges}</div>",
                     unsafe_allow_html=True,
                 )
 
-                # Table
-                display_cols = ["Vendor", "Category", "File Name"]
-                if "Quoted Price" in d_svc.columns:
-                    display_cols.append("Quoted Price")
-                if "File Link" in d_svc.columns:
-                    display_cols.append("File Link")
+                # ── FIX: Build HTML table with embedded file links ──
+                has_link  = "File Link"  in d_svc.columns
+                has_url   = "File URL"   in d_svc.columns
+                has_price = "Quoted Price" in d_svc.columns
 
-                st.dataframe(
-                    d_svc[display_cols].reset_index(drop=True),
-                    use_container_width=True,
-                    hide_index=True,
+                # Table header
+                th_style = (
+                    "padding:8px 14px;text-align:left;"
+                    "border-bottom:2px solid #ddd;background:#f4f6f7;"
+                    "font-size:0.88em;color:#2c3e50"
                 )
+                td_style = (
+                    "padding:7px 14px;border-bottom:1px solid #eee;"
+                    "font-size:0.85em;vertical-align:middle"
+                )
+
+                html_rows = []
+                html_rows.append(
+                    f"<table style='width:100%;border-collapse:collapse;"
+                    f"border-radius:8px;overflow:hidden'>"
+                    f"<thead><tr>"
+                    f"<th style='{th_style}'>Vendor</th>"
+                    f"<th style='{th_style}'>Category</th>"
+                    f"<th style='{th_style}'>📎 File Name</th>"
+                )
+                if has_price:
+                    html_rows.append(
+                        f"<th style='{th_style}'>💰 Quoted Price</th>"
+                    )
+                html_rows.append(
+                    f"<th style='{th_style}'>🔗 File Link</th>"
+                    f"</tr></thead><tbody>"
+                )
+
+                for i, (_, row) in enumerate(d_svc.iterrows()):
+                    bg  = "#ffffff" if i % 2 == 0 else "#f9f9f9"
+                    vc  = vendor_color_map.get(row["Vendor"], "#666")
+
+                    # Vendor badge cell
+                    vendor_cell = (
+                        f"<span style='background:{vc};color:white;"
+                        f"padding:3px 10px;border-radius:10px;"
+                        f"font-size:0.83em;font-weight:bold'>"
+                        f"{row['Vendor']}</span>"
+                    )
+
+                    # File name cell — plain text
+                    fname = str(row.get("File Name", "")).strip()
+                    fname_cell = (
+                        f"<span style='font-family:monospace;"
+                        f"font-size:0.82em;color:#2c3e50'>{fname}</span>"
+                    )
+
+                    # File link cell — clickable hyperlink
+                    flink = str(row.get("File Link", "")).strip() if has_link else ""
+                    furl  = str(row.get("File URL",  "")).strip() if has_url  else ""
+
+                    # Determine URL: prefer File Link, then File URL, then File Name
+                    url = ""
+                    if flink and flink not in ["", "nan"] and flink.startswith("http"):
+                        url = flink
+                    elif furl and furl not in ["", "nan"] and furl.startswith("http"):
+                        url = furl
+                    elif fname.startswith("http"):
+                        url = fname
+
+                    if url:
+                        link_label = fname if len(fname) <= 40 else fname[:37] + "…"
+                        link_cell  = (
+                            f"<a href='{url}' target='_blank' "
+                            f"style='color:#2980b9;text-decoration:underline;"
+                            f"font-family:monospace;font-size:0.82em'>"
+                            f"🔗 {link_label}</a>"
+                        )
+                    else:
+                        # No URL available — show file name as non-linked reference
+                        link_cell = (
+                            f"<span style='color:#95a5a6;"
+                            f"font-size:0.82em;font-style:italic'>"
+                            f"No link available</span>"
+                        )
+
+                    # Price cell
+                    price_val  = str(row.get("Quoted Price", "")).strip()
+                    price_cell = (
+                        f"<span style='color:#27ae60;font-weight:600'>"
+                        f"{price_val}</span>"
+                        if price_val and price_val not in ["", "nan", "0"]
+                        else "<span style='color:#bdc3c7'>—</span>"
+                    )
+
+                    html_rows.append(f"<tr style='background:{bg}'>")
+                    html_rows.append(
+                        f"<td style='{td_style}'>{vendor_cell}</td>"
+                        f"<td style='{td_style};color:#555'>"
+                        f"{row['Category']}</td>"
+                        f"<td style='{td_style}'>{fname_cell}</td>"
+                    )
+                    if has_price:
+                        html_rows.append(
+                            f"<td style='{td_style}'>{price_cell}</td>"
+                        )
+                    html_rows.append(
+                        f"<td style='{td_style}'>{link_cell}</td>"
+                        f"</tr>"
+                    )
+
+                html_rows.append("</tbody></table>")
+                st.markdown("".join(html_rows), unsafe_allow_html=True)
 
         # ── Shared services summary ───────────────────────────
         shared_svcs = [
@@ -597,8 +734,7 @@ else:
         ]
         if shared_svcs:
             with st.expander(
-                "🔁 Shared Services Summary "
-                "(same service offered by multiple vendors)",
+                "🔁 Shared Services — offered by multiple vendors",
                 expanded=False,
             ):
                 for s in shared_svcs:
@@ -612,6 +748,7 @@ else:
                         for v in vlist
                     ])
                     st.markdown(
-                        f"**{s}** → {badges}",
+                        f"<div style='margin-bottom:8px'>"
+                        f"<b>{s}</b> → {badges}</div>",
                         unsafe_allow_html=True,
                     )
