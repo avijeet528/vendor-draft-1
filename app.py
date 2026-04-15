@@ -27,6 +27,9 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer     {visibility: hidden;}
     header     {visibility: hidden;}
+    [data-testid="collapsedControl"] {
+        display: none !important;
+    }
     /* ── FIX: Remove sidebar collapse/expand arrow button ── */
     button[data-testid="collapsedControl"],
     button[kind="header"][data-testid="baseButton-header"] {
