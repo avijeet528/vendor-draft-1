@@ -116,6 +116,17 @@ button[data-baseweb="tab"][aria-selected="true"] {
     border-bottom: 3px solid #D04A02 !important;
 }
 
+/* ── FIX: Remove arrow/triangle from expander summary ── */
+div[data-testid="stExpander"] details summary {
+    list-style      : none !important;
+}
+div[data-testid="stExpander"] details summary::-webkit-details-marker {
+    display : none !important;
+}
+div[data-testid="stExpander"] details summary::marker {
+    display  : none !important;
+    content  : "" !important;
+}
 div[data-testid="stExpander"] details summary p {
     font-weight : 700;
     font-size   : 0.95em;
@@ -373,7 +384,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # Category
     sb_label("📂 Category")
     all_cats = ["All"] + sorted([
         c for c in df_master["Category"].unique()
@@ -382,7 +392,6 @@ with st.sidebar:
     selected_cat = st.selectbox(
         "Category", all_cats, label_visibility="collapsed")
 
-    # Vendor — scoped to category
     sb_label("🏢 Vendor")
     vendor_pool = (
         df_master if selected_cat == "All"
@@ -399,14 +408,12 @@ with st.sidebar:
         "<hr style='border-color:#555;margin:16px 0'>",
         unsafe_allow_html=True)
 
-    # Filtered data
     d_filt = df_exploded.copy()
     if selected_cat    != "All":
         d_filt = d_filt[d_filt["Category"] == selected_cat]
     if selected_vendor != "All":
         d_filt = d_filt[d_filt["Vendor"]   == selected_vendor]
 
-    # Service search
     sb_label("🔍 Search Services")
     svc_search = st.text_input(
         "Search", placeholder="e.g. Cisco, Oracle, M365…",
@@ -495,7 +502,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════════════════════════
-# CHART FONT
+# CHART HELPERS
 # ════════════════════════════════════════════════════════════
 CFONT = dict(
     family="Source Sans Pro, Helvetica Neue, Arial",
@@ -664,7 +671,10 @@ st.markdown(
     unsafe_allow_html=True)
 
 section_title("SERVICE SELECTION & QUOTATION ANALYSIS")
-st.markdown("### Select services from the sidebar to begin")
+st.markdown(
+    "<p style='color:#2D2D2D;font-size:1em;margin-bottom:16px'>"
+    "Select services from the sidebar to begin analysis.</p>",
+    unsafe_allow_html=True)
 
 if not selected_svcs:
     st.info(
@@ -674,9 +684,8 @@ else:
     d_sel = d_filt[d_filt["Service"].isin(selected_svcs)].copy()
 
     if d_sel.empty:
-        st.warning("⚠️ No results found under current filters.")
+        st.warning("No results found under current filters.")
     else:
-        # Vendor coverage map
         vendor_svc_map = defaultdict(set)
         for _, row in d_sel.iterrows():
             vendor_svc_map[row["Vendor"]].add(row["Service"])
@@ -700,12 +709,13 @@ else:
                         len(vendors_all), len(selected_svcs), names))
             else:
                 st.warning(
-                    "⚠️ No single vendor covers all {} "
+                    "No single vendor covers all {} "
                     "selected services.".format(len(selected_svcs)))
 
+            # ── FIX: Plain st.expander — no emoji prefix ──────
             if vendors_some:
                 with st.expander(
-                        "🔵 Vendors with partial coverage",
+                        "Vendors with partial coverage",
                         expanded=False):
                     for v in vendors_some:
                         covered = vendor_svc_map[v].intersection(
@@ -720,7 +730,6 @@ else:
                                 ", ".join(sorted(covered))),
                             unsafe_allow_html=True)
 
-        # Per-service breakdown
         section_title(
             "DETAILED QUOTATION BREAKDOWN — PER SERVICE",
             "Each service shows the vendor, file name "
@@ -736,12 +745,12 @@ else:
             )
             vendor_count = d_svc["Vendor"].nunique()
             shared_tag   = (
-                "⚠️ SHARED BY MULTIPLE VENDORS"
-                if vendor_count > 1 else "✅ SINGLE VENDOR"
+                "SHARED BY MULTIPLE VENDORS"
+                if vendor_count > 1 else "SINGLE VENDOR"
             )
 
             with st.expander(
-                "🛠 {}  |  {} vendor(s) · {} file(s)  [{}]".format(
+                "{} — {} vendor(s) · {} file(s) · {}".format(
                     svc, vendor_count, len(d_svc), shared_tag),
                 expanded=True,
             ):
@@ -765,12 +774,12 @@ else:
                     "<thead><tr>"
                     "<th>Vendor</th>"
                     "<th>Category</th>"
-                    "<th>📄 File Name</th>"
+                    "<th>File Name</th>"
                 ]
                 if has_price:
-                    rows.append("<th>💰 Quoted Price</th>")
+                    rows.append("<th>Quoted Price</th>")
                 rows.append(
-                    "<th>🔗 File Link</th>"
+                    "<th>File Link</th>"
                     "</tr></thead><tbody>"
                 )
 
@@ -779,21 +788,18 @@ else:
                     color = vendor_color_map.get(row["Vendor"], "#8C8C8C")
                     fname = str(row.get("File Name", "")).strip()
 
-                    # Vendor cell
                     v_cell = (
                         "<span class='vendor-badge' "
                         "style='background:{}'>{}</span>".format(
                             color, row["Vendor"])
                     )
 
-                    # File name cell
                     fn_cell = (
                         "<span style='font-family:monospace;"
                         "font-size:0.80em;word-break:break-all;"
                         "color:#2D2D2D'>{}</span>".format(fname)
                     )
 
-                    # URL
                     url = str(row.get("Hyperlink", "")).strip()
                     if not url or url == "nan":
                         url = str(row.get("File Link", "")).strip()
@@ -802,13 +808,12 @@ else:
                     if url == "nan":
                         url = ""
 
-                    # Link cell
                     if url and url.startswith("http"):
                         link_cell = (
                             "<a href='{}' target='_blank' "
                             "style='color:#D04A02;font-weight:600;"
                             "font-size:0.82em;text-decoration:none'>"
-                            "↗ Open file</a>".format(url)
+                            "Open file</a>".format(url)
                         )
                     else:
                         link_cell = (
@@ -816,7 +821,6 @@ else:
                             "font-size:0.80em'>—</span>"
                         )
 
-                    # Price cell
                     pval   = str(row.get("Quoted Price", "")).strip()
                     p_cell = (
                         "<span style='color:#22992E;font-weight:700;"
@@ -839,78 +843,42 @@ else:
                 rows.append("</tbody></table>")
                 st.markdown("".join(rows), unsafe_allow_html=True)
 
-                # ── Mini charts per service ───────────────────
+                # ── Mini chart — Quote files per vendor only ──
+                # (pie chart removed as requested)
                 st.markdown("<br>", unsafe_allow_html=True)
-                section_title("ANALYSIS FOR THIS SERVICE")
+                section_title("QUOTE FILES PER VENDOR — THIS SERVICE")
 
-                mc1, mc2 = st.columns(2, gap="large")
-
-                # Mini chart 1 — Quote files per vendor
-                with mc1:
-                    vc_counts = (
-                        d_svc.groupby("Vendor").size().reset_index()
-                    )
-                    vc_counts.columns = ["Vendor", "Files"]
-                    vc_counts["Color"] = [
-                        vendor_color_map.get(v, "#8C8C8C")
-                        for v in vc_counts["Vendor"]
-                    ]
-                    mfig1 = go.Figure(go.Bar(
-                        x=vc_counts["Vendor"],
-                        y=vc_counts["Files"],
-                        marker_color=vc_counts["Color"],
-                        marker_line_width=0,
-                        text=vc_counts["Files"],
-                        textposition="outside",
-                    ))
-                    mfig1.update_layout(
-                        title=dict(
-                            text="Quote Files per Vendor",
-                            font=dict(size=12, color="#2D2D2D")),
-                        height=280,
-                        plot_bgcolor=CBG,
-                        paper_bgcolor=CBG,
-                        margin=dict(l=5, r=10, t=40, b=10),
-                        font=CFONT,
-                        yaxis=dict(
-                            showgrid=True,
-                            gridcolor="#E0E0E0",
-                            zeroline=False),
-                        xaxis=dict(tickangle=-20),
-                        bargap=0.4,
-                    )
-                    st.plotly_chart(mfig1, use_container_width=True)
-
-                # Mini chart 2 — Category breakdown
-                with mc2:
-                    cat_svc = (
-                        d_svc.groupby("Category").size().reset_index()
-                    )
-                    cat_svc.columns = ["Category", "Count"]
-                    mfig2 = px.pie(
-                        cat_svc,
-                        names="Category",
-                        values="Count",
-                        hole=0.45,
-                        color_discrete_sequence=COLORS,
-                    )
-                    mfig2.update_traces(
-                        textposition="inside",
-                        textinfo="label+percent",
-                        textfont_size=10,
-                    )
-                    mfig2.update_layout(
-                        title=dict(
-                            text="Category Breakdown",
-                            font=dict(size=12, color="#2D2D2D")),
-                        height=280,
-                        margin=dict(l=10, r=10, t=40, b=10),
-                        paper_bgcolor=CBG,
-                        font=CFONT,
-                        showlegend=True,
-                        legend=dict(font=dict(size=9)),
-                    )
-                    st.plotly_chart(mfig2, use_container_width=True)
+                vc_counts = (
+                    d_svc.groupby("Vendor").size().reset_index()
+                )
+                vc_counts.columns = ["Vendor", "Files"]
+                vc_counts["Color"] = [
+                    vendor_color_map.get(v, "#8C8C8C")
+                    for v in vc_counts["Vendor"]
+                ]
+                mfig1 = go.Figure(go.Bar(
+                    x=vc_counts["Vendor"],
+                    y=vc_counts["Files"],
+                    marker_color=vc_counts["Color"],
+                    marker_line_width=0,
+                    text=vc_counts["Files"],
+                    textposition="outside",
+                ))
+                mfig1.update_layout(
+                    height=300,
+                    plot_bgcolor=CBG,
+                    paper_bgcolor=CBG,
+                    margin=dict(l=5, r=10, t=20, b=10),
+                    font=CFONT,
+                    yaxis=dict(
+                        title="Number of Quote Files",
+                        showgrid=True,
+                        gridcolor="#E0E0E0",
+                        zeroline=False),
+                    xaxis=dict(tickangle=-20),
+                    bargap=0.4,
+                )
+                st.plotly_chart(mfig1, use_container_width=True)
 
         # Shared services summary
         shared_svcs = [
@@ -919,7 +887,7 @@ else:
         ]
         if shared_svcs:
             with st.expander(
-                "🔁 Shared Services — same service by multiple vendors",
+                "Shared Services — same service by multiple vendors",
                 expanded=False,
             ):
                 for s in shared_svcs:
