@@ -1025,3 +1025,492 @@ else:
                         f"<div style='margin-bottom:8px'>"
                         f"<b>{s}</b> → {bgs}</div>",
                         unsafe_allow_html=True)
+                        margin:4px 0 2px;letter-spacing:0.05em'>
+            IT PROCUREMENT
+        </div>
+        <div style='font-size:0.75em;color:#7D7D7D;
+                    letter-spacing:0.08em;text-transform:uppercase'>
+            Service &amp; Vendor Dashboard
+        </div>
+    </div>
+    <div style='height:3px;background:#E03B24;
+                margin:0 0 16px;border-radius:2px'></div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(
+        "<p style='color:#ECECEC;font-weight:700;font-size:0.8em;"
+        "text-transform:uppercase;letter-spacing:0.06em;"
+        "margin-bottom:4px'>📂 Category</p>",
+        unsafe_allow_html=True)
+    all_cats = ["All"] + sorted([
+        c for c in df_master["Category"].unique()
+        if str(c).strip() not in ["", "nan"]])
+    selected_cat = st.selectbox(
+        "Category", all_cats, label_visibility="collapsed")
+
+    st.markdown(
+        "<p style='color:#ECECEC;font-weight:700;font-size:0.8em;"
+        "text-transform:uppercase;letter-spacing:0.06em;"
+        "margin:12px 0 4px'>🏢 Vendor</p>",
+        unsafe_allow_html=True)
+    vpool = (df_master if selected_cat == "All"
+             else df_master[df_master["Category"] == selected_cat])
+    all_vendors = ["All"] + sorted([
+        v for v in vpool["Vendor"].unique()
+        if str(v).strip() not in ["", "nan"]])
+    selected_vendor = st.selectbox(
+        "Vendor", all_vendors, label_visibility="collapsed")
+
+    st.markdown(
+        "<div style='height:1px;background:#444;margin:14px 0'></div>",
+        unsafe_allow_html=True)
+
+    d_filt = df_exploded.copy()
+    if selected_cat    != "All":
+        d_filt = d_filt[d_filt["Category"] == selected_cat]
+    if selected_vendor != "All":
+        d_filt = d_filt[d_filt["Vendor"]   == selected_vendor]
+
+    st.markdown(
+        "<p style='color:#ECECEC;font-weight:700;font-size:0.8em;"
+        "text-transform:uppercase;letter-spacing:0.06em;"
+        "margin-bottom:4px'>🔍 Search Services</p>",
+        unsafe_allow_html=True)
+    svc_search = st.text_input(
+        "Search", placeholder="e.g. Cisco, Oracle, M365…",
+        label_visibility="collapsed")
+
+    avail_svcs = sorted([
+        s for s in d_filt["Service"].unique()
+        if str(s).strip() not in ["", "nan"]])
+    if svc_search:
+        avail_svcs = [s for s in avail_svcs
+                      if svc_search.lower() in s.lower()]
+
+    st.markdown(
+        "<p style='color:#ECECEC;font-weight:700;font-size:0.8em;"
+        "text-transform:uppercase;letter-spacing:0.06em;"
+        "margin:12px 0 4px'>🛠 Select Services "
+        "<span style='font-weight:400;color:#7D7D7D'>"
+        f"({len(avail_svcs)} available)</span></p>",
+        unsafe_allow_html=True)
+    selected_svcs = st.multiselect(
+        "Services", options=avail_svcs, default=[],
+        label_visibility="collapsed",
+        help="Select services to see vendor and pricing details")
+
+    st.markdown(
+        "<div style='height:1px;background:#444;margin:14px 0'></div>",
+        unsafe_allow_html=True)
+    st.markdown(
+        f"<p style='color:#7D7D7D;font-size:0.78em;margin:2px 0'>"
+        f"📄 {len(df_master)} quotes &nbsp;|&nbsp; "
+        f"🛠 {df_exploded['Service'].nunique()} services &nbsp;|&nbsp; "
+        f"🏢 {df_master['Vendor'].nunique()} vendors</p>",
+        unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════════════════
+# MAIN HEADER
+# ════════════════════════════════════════════════════════════
+col_logo, col_title = st.columns([1, 11])
+with col_logo:
+    st.markdown(
+        f"<div style='background:{PWC_RED};width:48px;height:48px;"
+        f"border-radius:2px;margin-top:4px;display:flex;"
+        f"align-items:center;justify-content:center'>"
+        f"<span style='color:white;font-weight:900;font-size:1.1em;"
+        f"letter-spacing:-1px'>PwC</span></div>",
+        unsafe_allow_html=True)
+with col_title:
+    st.markdown(
+        f"<div style='padding:4px 0 8px'>"
+        f"<h1 style='margin:0;font-size:1.55em;font-weight:700;"
+        f"color:{PWC_DARK};letter-spacing:0.02em'>"
+        f"IT Procurement — Service &amp; Vendor Dashboard</h1>"
+        f"<p style='margin:3px 0 0;color:{PWC_GREY};font-size:0.88em'>"
+        f"Filter by Category → Vendor auto-updates → "
+        f"Select a service → Analyse pricing &amp; quotation files"
+        f"</p></div>",
+        unsafe_allow_html=True)
+
+st.markdown(
+    f"<div style='height:3px;background:{PWC_RED};"
+    f"margin:4px 0 20px;border-radius:2px'></div>",
+    unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════════════════
+# KPI CARDS
+# ════════════════════════════════════════════════════════════
+k1, k2, k3, k4 = st.columns(4)
+
+def kpi(col, val, label, color):
+    col.markdown(
+        f"<div class='kpi-box' style='background:{color}'>"
+        f"<div class='kpi-value'>{val}</div>"
+        f"<div class='kpi-label'>{label}</div></div>",
+        unsafe_allow_html=True)
+
+kpi(k1, d_filt["File Name"].nunique(),  "Quote Files",     PWC_RED)
+kpi(k2, d_filt["Service"].nunique(),    "Unique Services", PWC_DARK)
+kpi(k3, d_filt["Vendor"].nunique(),     "Vendors",         "#4A4A4A")
+kpi(k4, d_filt["Category"].nunique(),   "Categories",      PWC_GREY)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════════════════
+# CHARTS
+# ════════════════════════════════════════════════════════════
+st.markdown(
+    "<div class='section-title'>📊 Portfolio Overview</div>",
+    unsafe_allow_html=True)
+
+# ── Chart 1: Stacked bar — services per vendor per category ──
+st.markdown(
+    f"<p style='font-weight:600;color:{PWC_DARK};"
+    f"font-size:0.92em;margin-bottom:6px'>"
+    f"Service Coverage by Vendor &amp; Category</p>",
+    unsafe_allow_html=True)
+
+pivot = (
+    d_filt.drop_duplicates(subset=["Vendor", "Service", "Category"])
+    .groupby(["Vendor", "Category"])["Service"].count()
+    .reset_index()
+)
+pivot.columns = ["Vendor", "Category", "Service Count"]
+
+if not pivot.empty:
+    fig_stacked = px.bar(
+        pivot, x="Vendor", y="Service Count", color="Category",
+        title="Services Offered per Vendor — broken down by Category",
+        color_discrete_sequence=CHART_COLORS,
+        text_auto=True,
+    )
+    fig_stacked.update_layout(
+        height=380,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font=dict(family="Source Sans Pro, Helvetica Neue, sans-serif",
+                  size=11, color=PWC_DARK),
+        legend=dict(
+            orientation="h", yanchor="bottom",
+            y=1.02, xanchor="right", x=1,
+            font=dict(size=10)),
+        xaxis_tickangle=-30,
+        xaxis_title="",
+        yaxis_title="# Services",
+        margin=dict(l=10, r=10, t=60, b=10),
+        bargap=0.25,
+    )
+    fig_stacked.update_traces(
+        textfont_size=9, textangle=0,
+        textposition="inside", cliponaxis=False)
+    st.plotly_chart(fig_stacked, use_container_width=True)
+
+# ── Charts 2 & 3: Side by side ───────────────────────────────
+c_left, c_right = st.columns(2)
+
+with c_left:
+    shared = (
+        d_filt.groupby("Service")["Vendor"].nunique()
+        .sort_values(ascending=False)
+        .head(18).reset_index()
+    )
+    shared.columns = ["Service", "Vendor Count"]
+    shared["Color"] = shared["Vendor Count"].apply(
+        lambda x: PWC_RED if x > 1 else "#C0C0C0")
+
+    fig_shared = go.Figure(go.Bar(
+        x=shared["Vendor Count"],
+        y=shared["Service"].str[:40],
+        orientation="h",
+        marker_color=shared["Color"],
+        text=shared["Vendor Count"],
+        textposition="outside",
+    ))
+    fig_shared.update_layout(
+        title="🔁 Services Offered by Multiple Vendors",
+        xaxis_title="# Vendors",
+        height=500,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font=dict(family="Source Sans Pro, sans-serif",
+                  size=10, color=PWC_DARK),
+        margin=dict(l=10, r=20, t=45, b=30),
+        yaxis=dict(autorange="reversed"),
+    )
+    fig_shared.add_annotation(
+        x=0.98, y=-0.09, xref="paper", yref="paper",
+        text="Red = Shared by 2+ vendors  |  Grey = Single vendor",
+        showarrow=False, font=dict(size=9, color=PWC_GREY),
+        xanchor="right")
+    st.plotly_chart(fig_shared, use_container_width=True)
+
+with c_right:
+    cat_counts = (
+        d_filt.drop_duplicates(subset=["Category", "File Name"])
+        .groupby("Category").size().reset_index()
+    )
+    cat_counts.columns = ["Category", "Count"]
+
+    if not cat_counts.empty:
+        fig_pie = px.pie(
+            cat_counts,
+            names="Category",
+            values="Count",
+            title="🥧 Quote Distribution by Category",
+            hole=0.50,
+            color_discrete_sequence=CHART_COLORS,
+        )
+        fig_pie.update_layout(
+            height=500,
+            margin=dict(l=10, r=10, t=45, b=10),
+            paper_bgcolor="white",
+            font=dict(family="Source Sans Pro, sans-serif",
+                      size=11, color=PWC_DARK),
+            legend=dict(font=dict(size=10), orientation="v"),
+        )
+        fig_pie.update_traces(
+            textposition="inside",
+            textinfo="percent+label",
+            textfont_size=10)
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+# ════════════════════════════════════════════════════════════
+# RAW DATA TABLE (collapsible)
+# ════════════════════════════════════════════════════════════
+with st.expander("📄 Raw Data Table", expanded=False):
+    dm = df_master.copy()
+    if selected_cat    != "All":
+        dm = dm[dm["Category"] == selected_cat]
+    if selected_vendor != "All":
+        dm = dm[dm["Vendor"]   == selected_vendor]
+    st.dataframe(
+        dm.drop(columns=["Services List", "Hyperlink"], errors="ignore"),
+        use_container_width=True,
+        height=380)
+
+# ════════════════════════════════════════════════════════════
+# SERVICE RESULTS SECTION
+# ════════════════════════════════════════════════════════════
+st.markdown(
+    f"<div style='height:3px;background:{PWC_RED};"
+    f"margin:20px 0 12px;border-radius:2px'></div>",
+    unsafe_allow_html=True)
+st.markdown(
+    "<div class='section-title'>"
+    "🛠 Service → Vendor &amp; Pricing Analysis</div>",
+    unsafe_allow_html=True)
+
+if not selected_svcs:
+    st.markdown(
+        f"<div style='background:white;border:1px solid #E0E0E0;"
+        f"border-left:4px solid {PWC_RED};"
+        f"padding:16px 20px;border-radius:2px;color:{PWC_GREY}'>"
+        f"<b>👈 Open the sidebar (▶ arrow on the left) to select services.</b><br>"
+        f"<span style='font-size:0.9em'>"
+        f"Filter by Category → Vendor updates automatically → "
+        f"Pick one or more services → See full vendor &amp; pricing breakdown."
+        f"</span></div>",
+        unsafe_allow_html=True)
+else:
+    d_sel = d_filt[d_filt["Service"].isin(selected_svcs)].copy()
+
+    if d_sel.empty:
+        st.warning("⚠️ No results for selected service(s) under current filters.")
+    else:
+        # ── Vendor coverage map ───────────────────────────────
+        vsmap = defaultdict(set)
+        for _, r in d_sel.iterrows():
+            vsmap[r["Vendor"]].add(r["Service"])
+
+        vendors_all  = sorted([v for v, s in vsmap.items()
+                                if set(selected_svcs).issubset(s)])
+        vendors_some = sorted([v for v, s in vsmap.items()
+                                if not set(selected_svcs).issubset(s)])
+
+        if len(selected_svcs) > 1:
+            if vendors_all:
+                names = " · ".join([f"**{v}**" for v in vendors_all])
+                st.success(
+                    f"✅ **{len(vendors_all)} vendor(s) offer ALL "
+                    f"{len(selected_svcs)} services:** {names}")
+            else:
+                st.warning(
+                    "⚠️ No single vendor covers all selected services — "
+                    "see per-service breakdown below.")
+
+            if vendors_some:
+                with st.expander(
+                        "🔵 Vendors with partial coverage",
+                        expanded=False):
+                    for v in vendors_some:
+                        cov = vsmap[v].intersection(set(selected_svcs))
+                        vc  = vendor_color_map.get(v, "#666")
+                        st.markdown(
+                            f"<span class='vendor-badge' "
+                            f"style='background:{vc}'>{v}</span>"
+                            f" &nbsp; covers "
+                            f"**{len(cov)}/{len(selected_svcs)}**: "
+                            f"_{', '.join(sorted(cov))}_",
+                            unsafe_allow_html=True)
+
+        has_price = "Quoted Price" in d_sel.columns
+
+        # ════════════════════════════════════════════════════
+        # PER-SERVICE EXPANDERS WITH EXTENSIVE PRICE TABLE
+        # ════════════════════════════════════════════════════
+        for svc in selected_svcs:
+            d_svc = (
+                d_sel[d_sel["Service"] == svc]
+                .drop_duplicates(subset=["Vendor", "File Name"])
+                .sort_values("Vendor")
+            )
+            vc_count = d_svc["Vendor"].nunique()
+            stag = (
+                "⚠️ SHARED BY MULTIPLE VENDORS"
+                if vc_count > 1 else "✅ SINGLE VENDOR")
+
+            with st.expander(
+                f"🛠  {svc}  ·  {vc_count} vendor(s)  ·  "
+                f"{len(d_svc)} file(s)  [{stag}]",
+                    expanded=True):
+
+                # ── Vendor badge summary row ──────────────────
+                badge_parts = []
+                for v in sorted(d_svc["Vendor"].unique()):
+                    vc = vendor_color_map.get(v, "#666")
+                    badge_parts.append(
+                        f"<span class='vendor-badge' "
+                        f"style='background:{vc}'>{v}</span>")
+                badges_html = " ".join(badge_parts)
+                st.markdown(
+                    f"<div style='margin-bottom:14px'>"
+                    f"<b>Vendors offering this service:</b>"
+                    f"&nbsp;{badges_html}</div>",
+                    unsafe_allow_html=True)
+
+                # ── Build HTML price table ────────────────────
+                tbl = [
+                    "<table class='price-table'><thead><tr>"
+                    "<th>Vendor</th>"
+                    "<th>Category</th>"
+                    "<th>📄 File Name</th>"
+                    "<th>💰 Quoted Price</th>"
+                    "<th>🔢 Line Item</th>"
+                    "<th>💵 Item Value &nbsp;|&nbsp; 🔗 Link</th>"
+                    "</tr></thead><tbody>"
+                ]
+
+                grand_total_num = 0.0
+
+                for i, (_, row) in enumerate(d_svc.iterrows()):
+                    bg    = "#ffffff" if i % 2 == 0 else "#FAFAFA"
+                    vc    = vendor_color_map.get(row["Vendor"], "#666")
+                    fname = str(row.get("File Name", "")).strip()
+
+                    # ── Resolve URL ───────────────────────────
+                    url = str(row.get("Hyperlink", "")).strip()
+                    if not url or url == "nan":
+                        url = str(row.get("File Link", "")).strip()
+                    if not url or url == "nan":
+                        url = str(row.get("File URL",  "")).strip()
+                    valid_url = (
+                        url and url not in ["", "nan"]
+                        and url.startswith("http"))
+
+                    # ── Quoted price from Excel ───────────────
+                    qprice = str(row.get("Quoted Price", "")).strip()
+                    qprice = "" if qprice in ["", "nan", "0"] else qprice
+                    qprice_html = (
+                        f"<span style='color:#27ae60;font-weight:700'>"
+                        f"{qprice}</span>"
+                        if qprice else
+                        "<span style='color:#C0C0C0'>—</span>")
+
+                    # ── File link cell ────────────────────────
+                    label = fname[:36] + "…" if len(fname) > 36 else fname
+                    link_html = (
+                        f"<a href='{url}' target='_blank' "
+                        f"style='color:{PWC_RED};"
+                        f"text-decoration:underline;"
+                        f"font-size:0.82em;word-break:break-all'>"
+                        f"🔗 {label}</a>"
+                        if valid_url else
+                        f"<span style='color:#C0C0C0;"
+                        f"font-size:0.82em;font-style:italic'>"
+                        f"No link</span>")
+
+                    # ── Main file row ─────────────────────────
+                    vendor_badge = (
+                        f"<span class='vendor-badge' "
+                        f"style='background:{vc}'>"
+                        f"{row['Vendor']}</span>")
+                    tbl.append(
+                        f"<tr style='background:{bg}'>"
+                        f"<td>{vendor_badge}</td>"
+                        f"<td style='color:{PWC_GREY}'>"
+                        f"{row['Category']}</td>"
+                        f"<td style='font-family:monospace;"
+                        f"font-size:0.80em;color:{PWC_DARK};"
+                        f"word-break:break-all'>{fname}</td>"
+                        f"<td>{qprice_html}</td>"
+                        f"<td colspan='2'>{link_html}</td>"
+                        f"</tr>")
+
+                    # ── Extracted line items ──────────────────
+                    extract_key = f"extracted_{fname[:40]}"
+                    run_key     = f"run_{extract_key}"
+
+                    if st.session_state.get(run_key):
+                        pr     = st.session_state.get(
+                            extract_key,
+                            {"line_items": [], "total": ""})
+                        items  = pr.get("line_items", [])
+                        etotal = pr.get("total", "")
+
+                        if items:
+                            for lbl, val in items[:20]:
+                                tbl.append(
+                                    f"<tr class='line-item'>"
+                                    f"<td></td><td></td>"
+                                    f"<td style='color:{PWC_GREY};"
+                                    f"font-size:0.82em'>"
+                                    f"↳ {fname[:35]}</td>"
+                                    f"<td></td>"
+                                    f"<td style='color:{PWC_GREY};"
+                                    f"font-size:0.88em'>{lbl}</td>"
+                                    f"<td style='color:{PWC_DARK};"
+                                    f"font-weight:600'>{val}</td>"
+                                    f"</tr>")
+
+                        if etotal:
+                            tval = _parse_num(etotal)
+                            if tval > 0:
+                                grand_total_num += tval
+                            tbl.append(
+                                f"<tr class='total-row'>"
+                                f"<td colspan='4'></td>"
+                                f"<td><b>File Total</b></td>"
+                                f"<td style='color:{PWC_RED};"
+                                f"font-size:1.05em;font-weight:700'>"
+                                f"{etotal}</td>"
+                                f"</tr>")
+
+                # ── Grand total row ───────────────────────────
+                if grand_total_num > 0:
+                    tbl.append(
+                        f"<tr class='grand-total'>"
+                        f"<td colspan='4'>"
+                        f"<b>GRAND TOTAL — all extracted files "
+                        f"for this service</b></td>"
+                        f"<td></td>"
+                        f"<td style='font-size:1.1em;"
+                        f"letter-spacing:0.02em'>"
+                        f"≈ {grand_total_num:,.2f}</td>"
+                        f"</tr>")
+
+                tbl.append("</tbody></table>")
+                st.markdown("".join(tbl), unsafe_allow_html=True)
+
+                # ── Extract price
+                          
