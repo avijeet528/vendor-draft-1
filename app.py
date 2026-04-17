@@ -1,906 +1,864 @@
 # ============================================================
-#  app.py — IT Procurement Service Dashboard (Streamlit)
-#  PwC Brand | Source Sans Pro | Fixed table layout
+# app.py — IT Procurement Intelligence Dashboard (Cleaned)
+# Part 1 of continuation
 # ============================================================
 
-import streamlit as st
+import io
+import os
+import re
+import zipfile
+from collections import defaultdict
+
+import openpyxl
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from collections import defaultdict
-import openpyxl
-import os
+import streamlit as st
+
+try:
+    import requests
+    REQUESTS_OK = True
+except ImportError:
+    REQUESTS_OK = False
+
+try:
+    import pdfplumber
+    PDF_OK = True
+except ImportError:
+    PDF_OK = False
+
+
+# ============================================================
+# APP CONFIG
+# ============================================================
 
 st.set_page_config(
-    page_title="IT Procurement Dashboard",
+    page_title="IT Procurement Intelligence",
     page_icon="📋",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# ════════════════════════════════════════════════════════════
-# CSS
-# ════════════════════════════════════════════════════════════
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&display=swap');
 
-html, body, [class*="css"], div, p, span, td, th,
-label, button, .stMarkdown {
-    font-family: 'Source Sans Pro', 'Helvetica Neue',
-                 Arial, sans-serif !important;
-}
+# ============================================================
+# THEME
+# ============================================================
 
-.main .block-container {
-    background-color : #F3F3F3 !important;
-    padding-top      : 1.5rem;
-    max-width        : 100% !important;
-    padding-left     : 2rem !important;
-    padding-right    : 2rem !important;
-}
+C_ORANGE = "#D04A02"
+C_ORANGE_DARK = "#A33A00"
+C_ORANGE_MID = "#E8703A"
+C_ORANGE_LITE = "#FAD4C0"
 
-#MainMenu {visibility: hidden;}
-footer    {visibility: hidden;}
-header    {visibility: hidden;}
+C_BLACK = "#1A1A1A"
+C_DARK = "#2D2D2D"
+C_MID = "#4A4A4A"
 
-[data-testid="collapsedControl"] {
-    display: none !important;
-}
+C_GREY_DARK = "#7D7D7D"
+C_GREY = "#B0B0B0"
+C_GREY_LITE = "#E0E0E0"
+C_GREY_BG = "#F3F3F3"
+C_WHITE = "#FFFFFF"
 
-section[data-testid="stSidebar"] {
-    background-color : #2D2D2D !important;
-    border-right     : 3px solid #D04A02;
-    min-width        : 320px !important;
-    max-width        : 320px !important;
-}
-section[data-testid="stSidebar"] label,
-section[data-testid="stSidebar"] p,
-section[data-testid="stSidebar"] span,
-section[data-testid="stSidebar"] div {
-    color       : #F0F0F0 !important;
-    font-family : 'Source Sans Pro', sans-serif !important;
-}
-section[data-testid="stSidebar"] div[data-baseweb="select"] {
-    background-color : #FFFFFF !important;
-    border-radius    : 2px !important;
-    border           : 1px solid #999 !important;
-}
-section[data-testid="stSidebar"] div[data-baseweb="select"] * {
-    color: #2D2D2D !important;
-}
-section[data-testid="stSidebar"] div[data-baseweb="input"] {
-    background-color : #FFFFFF !important;
-    border-radius    : 2px !important;
-}
-section[data-testid="stSidebar"] div[data-baseweb="input"] input {
-    color: #2D2D2D !important;
-}
-section[data-testid="stSidebar"] span[data-baseweb="tag"] {
-    background-color : #D04A02 !important;
-    border-radius    : 2px !important;
-}
-section[data-testid="stSidebar"] span[data-baseweb="tag"] span {
-    color: white !important;
-}
-
-.kpi-box {
-    border-radius : 4px;
-    padding       : 20px 12px;
-    text-align    : center;
-    color         : white;
-    border-left   : 5px solid rgba(255,255,255,0.3);
-}
-.kpi-value {
-    font-size      : 2.3em;
-    font-weight    : 700;
-    margin         : 0;
-    line-height    : 1.1;
-    letter-spacing : -0.5px;
-}
-.kpi-label {
-    font-size      : 0.80em;
-    font-weight    : 700;
-    opacity        : 0.92;
-    margin-top     : 6px;
-    letter-spacing : 0.8px;
-    text-transform : uppercase;
-}
-
-button[data-baseweb="tab"] {
-    font-weight : 600 !important;
-    font-size   : 0.92em !important;
-    color       : #7D7D7D !important;
-}
-button[data-baseweb="tab"][aria-selected="true"] {
-    color        : #D04A02 !important;
-    border-bottom: 3px solid #D04A02 !important;
-}
-
-/* ── FIX: Remove arrow/triangle from expander summary ── */
-div[data-testid="stExpander"] details summary {
-    list-style      : none !important;
-}
-div[data-testid="stExpander"] details summary::-webkit-details-marker {
-    display : none !important;
-}
-div[data-testid="stExpander"] details summary::marker {
-    display  : none !important;
-    content  : "" !important;
-}
-div[data-testid="stExpander"] details summary p {
-    font-weight : 700;
-    font-size   : 0.95em;
-    color       : #2D2D2D !important;
-}
-div[data-testid="stExpander"] details {
-    border        : 1px solid #ddd;
-    border-radius : 4px;
-    margin-bottom : 10px;
-}
-
-.svc-table {
-    width           : 100%;
-    border-collapse : collapse;
-    table-layout    : fixed;
-}
-.svc-table thead tr {
-    background: #2D2D2D;
-}
-.svc-table thead th {
-    padding        : 10px 12px;
-    text-align     : left;
-    font-weight    : 700;
-    font-size      : 0.82em;
-    letter-spacing : 0.5px;
-    text-transform : uppercase;
-    color          : white !important;
-    border         : none;
-    word-break     : break-word;
-}
-.svc-table tbody tr:nth-child(even) { background: #F3F3F3; }
-.svc-table tbody tr:hover           { background: #FCE8DC; }
-.svc-table tbody td {
-    padding        : 8px 12px;
-    border-bottom  : 1px solid #e8e8e8;
-    vertical-align : middle;
-    word-break     : break-word;
-    font-size      : 0.83em;
-    color          : #2D2D2D;
-}
-.svc-table th:nth-child(1),
-.svc-table td:nth-child(1) { width: 13%; }
-.svc-table th:nth-child(2),
-.svc-table td:nth-child(2) { width: 14%; }
-.svc-table th:nth-child(3),
-.svc-table td:nth-child(3) { width: 35%; }
-.svc-table th:nth-child(4),
-.svc-table td:nth-child(4) { width: 13%; }
-.svc-table th:nth-child(5),
-.svc-table td:nth-child(5) { width: 25%; }
-
-.vendor-badge {
-    display        : inline-block;
-    padding        : 3px 8px;
-    border-radius  : 2px;
-    color          : white;
-    font-size      : 0.78em;
-    font-weight    : 700;
-    white-space    : nowrap;
-    overflow       : hidden;
-    text-overflow  : ellipsis;
-    max-width      : 100%;
-    box-sizing     : border-box;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# ════════════════════════════════════════════════════════════
-# PwC COLOURS
-# ════════════════════════════════════════════════════════════
-COLORS = [
-    "#D04A02","#295477","#299D8F",
-    "#FFB600","#22992E","#E0301E",
-    "#EB8C00","#6E2585","#8C8C8C","#004F9F",
+CHART_SEQ = [
+    C_ORANGE,
+    C_DARK,
+    C_ORANGE_MID,
+    C_GREY_DARK,
+    C_ORANGE_DARK,
+    C_GREY,
+    C_MID,
+    C_BLACK,
 ]
 
-def get_color(i):
-    return COLORS[i % len(COLORS)]
+CFONT = dict(
+    family="Georgia,'Source Sans Pro',Arial",
+    size=11,
+    color=C_DARK,
+)
+
+CBG = C_GREY_BG
+DEMO_DIR = "demo_quotes"
+MASTER_CATALOG_FILE = "Master Catalog.xlsx"
+DUMMY_CATALOG_FILE = "dummy_catalog.csv"
 
 
-# ════════════════════════════════════════════════════════════
-# EXTRACT EMBEDDED HYPERLINKS
-# ════════════════════════════════════════════════════════════
-@st.cache_data
-def extract_hyperlinks(file_path):
-    link_map = {}
+# ============================================================
+# GLOBAL CSS
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&display=swap');
+
+    html, body, [class*="css"], div, p, span, td, th, label, button, .stMarkdown {
+        font-family: 'Source Sans Pro', 'Helvetica Neue', Arial, sans-serif !important;
+    }
+
+    h1, h2, h3 {
+        font-family: Georgia, 'ITC Charter', serif !important;
+        font-weight: 700 !important;
+    }
+
+    section[data-testid="stSidebar"] { display: none !important; }
+    [data-testid="collapsedControl"] { display: none !important; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    header { visibility: hidden; }
+
+    .main .block-container {
+        background: #F3F3F3 !important;
+        max-width: 100% !important;
+        padding: 1.2rem 2.5rem !important;
+    }
+
+    button[data-baseweb="tab"] {
+        font-weight: 600 !important;
+        font-size: 0.90em !important;
+        color: #7D7D7D !important;
+    }
+
+    button[data-baseweb="tab"][aria-selected="true"] {
+        color: #D04A02 !important;
+        border-bottom: 3px solid #D04A02 !important;
+        background: transparent !important;
+    }
+
+    .kpi-box {
+        border-radius: 4px;
+        padding: 20px 12px;
+        text-align: center;
+        color: white;
+        border-left: 5px solid rgba(255,255,255,0.2);
+    }
+
+    .kpi-value {
+        font-size: 2.4em;
+        font-weight: 700;
+        margin: 0;
+        line-height: 1.1;
+        font-family: Georgia, serif !important;
+    }
+
+    .kpi-label {
+        font-size: 0.72em;
+        font-weight: 700;
+        opacity: 0.9;
+        margin-top: 6px;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+    }
+
+    .sec-head {
+        font-size: 0.73em;
+        font-weight: 700;
+        letter-spacing: 1.4px;
+        text-transform: uppercase;
+        color: #D04A02;
+        margin: 22px 0 10px;
+        border-bottom: 2px solid #D04A02;
+        padding-bottom: 5px;
+        display: block;
+    }
+
+    .comp-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.81em;
+        border: 1px solid #E0E0E0;
+    }
+
+    .comp-table thead tr { background: #2D2D2D; }
+
+    .comp-table thead th {
+        padding: 10px 12px;
+        text-align: left;
+        font-weight: 700;
+        font-size: 0.78em;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: white !important;
+        border: none;
+    }
+
+    .comp-table tbody tr:nth-child(even) { background: #F8F8F8; }
+    .comp-table tbody tr:hover { background: #FAD4C0; }
+
+    .comp-table tbody td {
+        padding: 9px 12px;
+        border-bottom: 1px solid #EBEBEB;
+        vertical-align: middle;
+        word-break: break-word;
+        color: #2D2D2D;
+    }
+
+    .vbadge {
+        display: inline-block;
+        padding: 3px 9px;
+        border-radius: 2px;
+        color: white;
+        font-size: 0.76em;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .scard {
+        border-radius: 4px;
+        padding: 16px;
+        margin-bottom: 10px;
+        border-left: 5px solid #D04A02;
+        background: white;
+    }
+
+    .scard-orange { border-color: #D04A02; background: #FFF5F0; }
+    .scard-dark { border-color: #2D2D2D; background: #F5F5F5; }
+    .scard-grey { border-color: #7D7D7D; background: #FAFAFA; }
+
+    .verdict-good {
+        background: #FFF5F0;
+        border: 2px solid #D04A02;
+        border-radius: 4px;
+        padding: 14px 18px;
+        color: #D04A02;
+        font-weight: 700;
+    }
+
+    .verdict-mid {
+        background: #F5F5F5;
+        border: 2px solid #4A4A4A;
+        border-radius: 4px;
+        padding: 14px 18px;
+        color: #4A4A4A;
+        font-weight: 700;
+    }
+
+    .verdict-bad {
+        background: #F0F0F0;
+        border: 2px solid #7D7D7D;
+        border-radius: 4px;
+        padding: 14px 18px;
+        color: #2D2D2D;
+        font-weight: 700;
+    }
+
+    .chat-header {
+        background: #2D2D2D;
+        color: white;
+        padding: 12px 18px;
+        border-radius: 6px 6px 0 0;
+    }
+
+    .chat-outer {
+        background: #F8F8F8;
+        border: 1px solid #E0E0E0;
+        border-top: none;
+        border-radius: 0;
+        padding: 14px 14px 6px;
+        min-height: 320px;
+        max-height: 420px;
+        overflow-y: auto;
+    }
+
+    .msg-user {
+        background: #D04A02;
+        color: white;
+        border-radius: 14px 14px 3px 14px;
+        padding: 9px 14px;
+        margin: 5px 0 5px auto;
+        max-width: 74%;
+        font-size: 0.86em;
+        display: inline-block;
+        float: right;
+        clear: both;
+    }
+
+    .msg-bot {
+        background: white;
+        color: #2D2D2D;
+        border: 1px solid #E0E0E0;
+        border-left: 4px solid #D04A02;
+        border-radius: 14px 14px 14px 3px;
+        padding: 9px 14px;
+        margin: 5px 0;
+        max-width: 84%;
+        font-size: 0.86em;
+        display: inline-block;
+        float: left;
+        clear: both;
+    }
+
+    .chat-wrap {
+        overflow: hidden;
+        margin-bottom: 3px;
+    }
+
+    .filter-bar {
+        background: #2D2D2D;
+        padding: 14px 20px;
+        border-radius: 4px;
+        margin-bottom: 18px;
+        border-left: 4px solid #D04A02;
+    }
+
+    .insight-box {
+        background: #FFF5F0;
+        border-left: 4px solid #D04A02;
+        border-radius: 0 4px 4px 0;
+        padding: 11px 16px;
+        margin: 10px 0;
+        font-size: 0.86em;
+        color: #2D2D2D;
+    }
+
+    .bucket-header {
+        background: #1A1A1A;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 4px;
+        margin-bottom: 6px;
+        border-left: 6px solid #D04A02;
+        font-size: 0.85em;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+    }
+
+    div[data-testid="stHorizontalBlock"] button[kind="secondary"] {
+        background: white !important;
+        border: 1.5px solid #D04A02 !important;
+        color: #D04A02 !important;
+        border-radius: 20px !important;
+        font-size: 0.78em !important;
+        font-weight: 600 !important;
+        padding: 4px 8px !important;
+    }
+
+    div[data-testid="stHorizontalBlock"] button[kind="secondary"]:hover {
+        background: #FFF5F0 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
+# REGEX / PRICE EXTRACTION
+# ============================================================
+
+PRICE_RE = re.compile(
+    r"(?:USD|EUR|GBP|SGD|MYR|AUD|CAD)\s?\d{1,3}(?:[,]\d{3})*(?:\.\d{1,2})?"
+    r"|(?:[\$\€\£]\s?)\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?"
+    r"|\d{1,3}(?:[,]\d{3})+(?:\.\d{1,2})?",
+    re.IGNORECASE,
+)
+
+TOTAL_KW = [
+    "grand total",
+    "total amount",
+    "total price",
+    "amount due",
+    "net total",
+    "total cost",
+    "total value",
+    "subtotal",
+    "total",
+]
+
+
+# ============================================================
+# GENERIC HELPERS
+# ============================================================
+
+def parse_num(value) -> float:
     try:
-        wb = openpyxl.load_workbook(file_path)
-        ws = wb.active
-        file_name_col  = None
-        header_row_idx = None
-        for row in ws.iter_rows():
-            for cell in row:
-                if (cell.value and
-                        str(cell.value).strip().lower() == "file name"):
-                    file_name_col  = cell.column
-                    header_row_idx = cell.row
-                    break
-            if file_name_col:
-                break
-        if file_name_col is None:
-            return link_map
-        for row in ws.iter_rows(
-            min_row=header_row_idx + 1,
-            min_col=file_name_col,
-            max_col=file_name_col,
-        ):
-            cell = row[0]
-            if cell.value and cell.hyperlink:
-                display = str(cell.value).strip()
-                url     = str(cell.hyperlink.target).strip()
-                if url:
-                    link_map[display] = url
-        wb.close()
-    except Exception as e:
-        st.warning("Could not extract hyperlinks: {}".format(e))
-    return link_map
+        return float(re.sub(r"[^\d.]", "", str(value)) or "0")
+    except Exception:
+        return 0.0
 
 
-# ════════════════════════════════════════════════════════════
-# DATA LOADING
-# ════════════════════════════════════════════════════════════
-@st.cache_data
-def load_data():
-    FILE_PATH = "Master Catalog.xlsx"
-    if not os.path.exists(FILE_PATH):
-        st.error("File not found: {}".format(FILE_PATH))
-        return None, None
+def fmt_currency(value) -> str:
+    try:
+        parsed = float(re.sub(r"[^\d.]", "", str(value)) or "0")
+        return "—" if parsed <= 0 else "${:,.2f}".format(parsed)
+    except Exception:
+        return str(value)
 
-    raw = pd.read_excel(FILE_PATH, engine="openpyxl", header=None)
-    header_row = None
-    for i, row in raw.iterrows():
-        row_vals = [
-            str(v).strip().lower() for v in row.values if pd.notna(v)
-        ]
-        if (any("category" in v for v in row_vals) and
-                any("file" in v for v in row_vals)):
-            header_row = i
-            break
-    if header_row is None:
-        st.error("Could not detect header row.")
-        return None, None
 
-    df = pd.read_excel(FILE_PATH, engine="openpyxl", header=header_row)
-    df = df.loc[:, df.columns.notna()]
-    df.columns = [str(c).strip() for c in df.columns]
-    df.dropna(how="all", inplace=True)
+def best_price_from_text(text: str) -> str:
+    text_lower = text.lower()
 
-    col_map = {}
-    for c in df.columns:
-        cl = str(c).lower().strip()
-        if cl == "category":
-            col_map["Category"]     = c
-        elif "vendor" in cl or "type" in cl:
-            col_map["Vendor"]       = c
-        elif cl == "file name":
-            col_map["File Name"]    = c
-        elif cl == "file link":
-            col_map["File Link"]    = c
-        elif cl == "file url":
-            col_map["File URL"]     = c
-        elif "comment" in cl:
-            col_map["Comments"]     = c
-        elif "quoted" in cl or "price" in cl:
-            col_map["Quoted Price"] = c
+    for keyword in TOTAL_KW:
+        idx = text_lower.find(keyword)
+        if idx == -1:
+            continue
 
-    df.rename(columns={v: k for k, v in col_map.items()}, inplace=True)
+        snippet = text[max(0, idx - 20): idx + 300]
+        hits = PRICE_RE.findall(snippet)
+        valid = [hit.strip() for hit in hits if parse_num(hit) >= 50]
+        if valid:
+            return max(valid, key=parse_num)
 
-    keep = ["Category", "Vendor", "File Name", "Comments"]
-    for extra in ["File Link", "File URL", "Quoted Price"]:
-        if extra in df.columns:
-            keep.append(extra)
-    df = df[[c for c in keep if c in df.columns]].copy()
+    all_hits = PRICE_RE.findall(text)
+    valid = [hit.strip() for hit in all_hits if parse_num(hit) >= 100]
+    return max(valid, key=parse_num) if valid else ""
 
-    df = df[
-        ~(
-            df["Category"].astype(str).str.strip().isin(["", "nan"]) &
-            df["Vendor"].astype(str).str.strip().isin(["", "nan"])
-        )
-    ].copy()
 
-    for col in df.columns:
-        df[col] = df[col].fillna("").astype(str).str.strip()
-    df.reset_index(drop=True, inplace=True)
+def text_from_bytes(content: bytes, ext: str) -> str:
+    text = ""
+    ext = ext.lower().strip(".")
 
-    hyperlink_map   = extract_hyperlinks(FILE_PATH)
-    df["Hyperlink"] = df["File Name"].map(hyperlink_map).fillna("")
-    for fallback_col in ["File Link", "File URL"]:
-        if fallback_col in df.columns:
-            df["Hyperlink"] = df.apply(
-                lambda r: r["Hyperlink"]
-                if r["Hyperlink"] not in ["", "nan"]
-                else r[fallback_col],
-                axis=1,
+    try:
+        if ext == "pdf":
+            if not PDF_OK:
+                return ""
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+
+        elif ext in ("xlsx", "xls"):
+            workbook = openpyxl.load_workbook(
+                io.BytesIO(content),
+                data_only=True,
+                read_only=True,
             )
+            rows_text = []
+            for worksheet in workbook.worksheets:
+                for row in worksheet.iter_rows(values_only=True):
+                    row_text = "  ".join(str(cell) for cell in row if cell is not None)
+                    if row_text.strip():
+                        rows_text.append(row_text)
+            text = "\n".join(rows_text)
+            workbook.close()
 
-    def parse_services(raw_val):
-        if not raw_val or str(raw_val).strip() in ["", "nan"]:
-            return ["(unspecified)"]
-        parts = [s.strip() for s in str(raw_val).split("\n") if s.strip()]
-        return parts if parts else ["(unspecified)"]
+        elif ext == "docx":
+            with zipfile.ZipFile(io.BytesIO(content)) as zipped:
+                if "word/document.xml" in zipped.namelist():
+                    xml = zipped.read("word/document.xml").decode("utf-8", errors="ignore")
+                    text = re.sub(r"<[^>]+>", " ", xml)
+                    text = re.sub(r"\s{2,}", "\n", text)
 
-    df["Services List"] = df["Comments"].apply(parse_services)
+    except Exception:
+        pass
 
-    df_exp = df.explode("Services List").copy()
-    df_exp.rename(columns={"Services List": "Service"}, inplace=True)
-    df_exp["Service"] = df_exp["Service"].str.strip()
-    df_exp = df_exp[
-        (df_exp["Service"] != "") &
-        (df_exp["Service"] != "(unspecified)") &
-        (df_exp["Service"] != "nan")
+    return text
+
+
+def extract_price_from_bytes(content: bytes, ext: str) -> dict:
+    text = text_from_bytes(content, ext)
+    price = best_price_from_text(text)
+
+    if not price or parse_num(price) <= 0:
+        all_numbers = [
+            hit.strip()
+            for hit in PRICE_RE.findall(text)
+            if parse_num(hit) >= 1000
+        ]
+        if all_numbers:
+            price = max(all_numbers, key=parse_num)
+
+    return {
+        "price": price,
+        "price_num": parse_num(price) if price else 0.0,
+        "text": text[:5000],
+    }
+
+
+def extract_price_from_file(filepath: str) -> dict:
+    try:
+        with open(filepath, "rb") as file:
+            content = file.read()
+        ext = filepath.rsplit(".", 1)[-1]
+        return extract_price_from_bytes(content, ext)
+    except Exception:
+        return {"price": "", "price_num": 0.0, "text": ""}
+
+
+# ============================================================
+# SCORING HELPERS
+# ============================================================
+
+def price_score(new_price: float, historical_prices: list[float]):
+    valid = [price for price in historical_prices if price > 0]
+
+    if not valid or new_price <= 0:
+        return None, "No comparison data", 0, 0, 0
+
+    minimum = min(valid)
+    maximum = max(valid)
+    average = sum(valid) / len(valid)
+
+    if maximum == minimum:
+        return 50, "Same as historical average", average, minimum, maximum
+
+    score = round((1 - (new_price - minimum) / (maximum - minimum)) * 100, 1)
+    score = max(0, min(100, score))
+
+    pct = round((new_price - average) / average * 100, 1)
+    label = (
+        f"{abs(pct)}% BELOW average — COMPETITIVE"
+        if new_price < average
+        else f"{abs(pct)}% ABOVE average — REVIEW NEEDED"
+    )
+
+    return score, label, average, minimum, maximum
+
+
+def score_color(score):
+    if score is None:
+        return C_GREY_DARK
+    if score >= 70:
+        return C_ORANGE
+    if score >= 40:
+        return C_GREY_DARK
+    return C_MID
+
+
+def get_verdict(score):
+    if score is None:
+        return "⚪ No Data", "No comparison data.", C_GREY_DARK
+    if score >= 70:
+        return "✅ COMPETITIVE", "Priced competitively.", C_ORANGE
+    if score >= 40:
+        return "🟡 AVERAGE", "Within range. Negotiate.", C_GREY_DARK
+    return "🔴 HIGH", "Above average. Recommend negotiating.", C_MID
+
+
+# ============================================================
+# DATAFRAME HELPERS
+# ============================================================
+
+def clean_df(df: pd.DataFrame) -> pd.DataFrame:
+    safe_columns = [col for col in df.columns if col != "Services List"]
+    cleaned = df[safe_columns].copy()
+
+    for col in cleaned.columns:
+        try:
+            cleaned[col] = cleaned[col].fillna("").apply(lambda x: str(x).strip())
+        except Exception:
+            cleaned[col] = ""
+
+    mask = (
+        cleaned["Category"].apply(lambda x: x in ["", "nan"])
+        & cleaned["Vendor"].apply(lambda x: x in ["", "nan"])
+    )
+    cleaned = cleaned[~mask].copy()
+    cleaned.reset_index(drop=True, inplace=True)
+    return cleaned
+
+
+def parse_services(value) -> list[str]:
+    if not value or str(value).strip() in ["", "nan", "None"]:
+        return ["(unspecified)"]
+
+    text = str(value).replace("\\n", "\n").replace("\r\n", "\n").replace("\r", "\n")
+    parts = [part.strip() for part in text.split("\n") if part.strip() and part.strip() != "nan"]
+
+    if not parts:
+        parts = [part.strip() for part in text.split(";") if part.strip()]
+
+    if not parts and len(text) < 300:
+        parts = [part.strip() for part in text.split(",") if part.strip()]
+
+    return parts if parts else ["(unspecified)"]
+
+
+def explode_services(df: pd.DataFrame):
+    df_base = df.copy()
+    df_base["Services List"] = df_base["Comments"].apply(parse_services)
+
+    exploded = df_base.explode("Services List").copy()
+    exploded.rename(columns={"Services List": "Service"}, inplace=True)
+    exploded["Service"] = exploded["Service"].apply(lambda x: str(x).strip())
+
+    exploded = exploded[
+        ~exploded["Service"].isin(["", "(unspecified)", "nan", "None"])
     ].reset_index(drop=True)
 
-    return df, df_exp
+    return df_base, exploded
 
 
-# ════════════════════════════════════════════════════════════
-# LOAD
-# ════════════════════════════════════════════════════════════
-df_master, df_exploded = load_data()
-if df_master is None or df_exploded is None:
-    st.stop()
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    col_map = {}
 
-vendor_color_map = {
-    v: get_color(i)
-    for i, v in enumerate(sorted(df_master["Vendor"].unique()))
-}
+    for col in df.columns:
+        normalized = str(col).lower().strip()
 
+        if normalized == "category" and "Category" not in col_map:
+            col_map["Category"] = col
 
-# ════════════════════════════════════════════════════════════
-# SIDEBAR
-# ════════════════════════════════════════════════════════════
-def sb_label(txt):
-    st.markdown(
-        "<p style='color:#F0F0F0;font-weight:700;font-size:0.88em;"
-        "margin:12px 0 4px;letter-spacing:0.5px;"
-        "text-transform:uppercase'>{}</p>".format(txt),
-        unsafe_allow_html=True,
-    )
+        elif any(key in normalized for key in ["vendor", "supplier"]) and "Vendor" not in col_map:
+            col_map["Vendor"] = col
 
+        elif ("file name" in normalized or normalized == "filename") and "File Name" not in col_map:
+            col_map["File Name"] = col
 
-with st.sidebar:
+        elif any(key in normalized for key in ["file link", "file url"]) and "File Link" not in col_map:
+            col_map["File Link"] = col
 
-    st.markdown(
-        "<div style='text-align:center;padding:22px 0 16px'>"
-        "<div style='font-size:2.2em'>📋</div>"
-        "<div style='font-size:1.1em;font-weight:700;color:white;"
-        "margin:6px 0 2px;letter-spacing:0.5px'>IT Procurement</div>"
-        "<div style='font-size:0.75em;color:#aaa;letter-spacing:1px;"
-        "text-transform:uppercase'>Service &amp; Vendor Dashboard</div>"
-        "</div>"
-        "<hr style='border-color:#D04A02;border-width:2px;"
-        "margin:0 0 18px'>",
-        unsafe_allow_html=True,
-    )
+        elif any(key in normalized for key in ["comment", "service", "description", "scope"]) and "Comments" not in col_map:
+            col_map["Comments"] = col
 
-    sb_label("📂 Category")
-    all_cats = ["All"] + sorted([
-        c for c in df_master["Category"].unique()
-        if str(c).strip() not in ["", "nan"]
-    ])
-    selected_cat = st.selectbox(
-        "Category", all_cats, label_visibility="collapsed")
+        elif any(key in normalized for key in ["price", "cost", "amount", "quoted"]) and "Quoted Price" not in col_map:
+            col_map["Quoted Price"] = col
 
-    sb_label("🏢 Vendor")
-    vendor_pool = (
-        df_master if selected_cat == "All"
-        else df_master[df_master["Category"] == selected_cat]
-    )
-    all_vendors = ["All"] + sorted([
-        v for v in vendor_pool["Vendor"].unique()
-        if str(v).strip() not in ["", "nan"]
-    ])
-    selected_vendor = st.selectbox(
-        "Vendor", all_vendors, label_visibility="collapsed")
+    df = df.rename(columns={v: k for k, v in col_map.items()})
 
-    st.markdown(
-        "<hr style='border-color:#555;margin:16px 0'>",
-        unsafe_allow_html=True)
+    for required in ["Category", "Vendor", "File Name", "Comments"]:
+        if required not in df.columns:
+            df[required] = ""
 
-    d_filt = df_exploded.copy()
-    if selected_cat    != "All":
-        d_filt = d_filt[d_filt["Category"] == selected_cat]
-    if selected_vendor != "All":
-        d_filt = d_filt[d_filt["Vendor"]   == selected_vendor]
+    keep = ["Category", "Vendor", "File Name", "Comments"]
+    for optional in ["File Link", "Quoted Price"]:
+        if optional in df.columns:
+            keep.append(optional)
 
-    sb_label("🔍 Search Services")
-    svc_search = st.text_input(
-        "Search", placeholder="e.g. Cisco, Oracle, M365…",
-        label_visibility="collapsed")
-
-    available_svcs = sorted([
-        s for s in d_filt["Service"].unique()
-        if str(s).strip() not in ["", "nan"]
-    ])
-    if svc_search:
-        available_svcs = [
-            s for s in available_svcs
-            if svc_search.lower() in s.lower()
-        ]
-
-    sb_label("🛠 Select Services ({} available)".format(
-        len(available_svcs)))
-    selected_svcs = st.multiselect(
-        "Services",
-        options=available_svcs,
-        default=[],
-        label_visibility="collapsed",
-        help="Select one or more services",
-    )
-
-    st.markdown(
-        "<hr style='border-color:#555;margin:16px 0'>",
-        unsafe_allow_html=True)
-
-    st.markdown(
-        "<p style='color:#888;font-size:0.80em;margin:3px 0'>"
-        "📄 {} total quotes</p>"
-        "<p style='color:#888;font-size:0.80em;margin:3px 0'>"
-        "🛠 {} unique services</p>"
-        "<p style='color:#888;font-size:0.80em;margin:3px 0'>"
-        "🏢 {} vendors</p>".format(
-            len(df_master),
-            df_exploded["Service"].nunique(),
-            df_master["Vendor"].nunique()),
-        unsafe_allow_html=True)
+    return df[[col for col in keep if col in df.columns]].copy()
 
 
-# ════════════════════════════════════════════════════════════
-# MAIN HEADER
-# ════════════════════════════════════════════════════════════
-st.markdown(
-    "<div style='background:#2D2D2D;color:white;"
-    "padding:22px 30px;border-radius:4px;"
-    "border-left:6px solid #D04A02;margin-bottom:24px'>"
-    "<div style='font-size:0.75em;font-weight:700;"
-    "letter-spacing:2px;text-transform:uppercase;"
-    "color:#D04A02;margin-bottom:6px'>IT Procurement Analytics</div>"
-    "<h1 style='margin:0;font-size:1.5em;font-weight:700;"
-    "color:white;letter-spacing:-0.3px'>"
-    "Service &amp; Vendor Dashboard</h1>"
-    "<p style='margin:7px 0 0;opacity:0.65;font-size:0.88em;"
-    "font-weight:300'>"
-    "Filter by Category → Vendor auto-updates → "
-    "Select a service → See vendor &amp; quotation file instantly"
-    "</p></div>",
-    unsafe_allow_html=True)
+def extract_hyperlink_map_from_excel(filepath: str) -> dict:
+    hyperlink_map = {}
+
+    try:
+        workbook = openpyxl.load_workbook(filepath)
+        worksheet = workbook.active
+
+        file_col = None
+        header_row = None
+
+        for row in worksheet.iter_rows():
+            for cell in row:
+                if cell.value and str(cell.value).strip().lower() == "file name":
+                    file_col = cell.column
+                    header_row = cell.row
+                    break
+            if file_col:
+                break
+
+        if file_col and header_row:
+            for row in worksheet.iter_rows(min_row=header_row + 1):
+                for cell in row:
+                    if cell.column == file_col and cell.value and cell.hyperlink:
+                        hyperlink_map[str(cell.value).strip()] = str(cell.hyperlink.target).strip()
+
+        workbook.close()
+
+    except Exception:
+        pass
+
+    return hyperlink_map
 
 
-# ════════════════════════════════════════════════════════════
-# KPI CARDS
-# ════════════════════════════════════════════════════════════
-c1, c2, c3, c4 = st.columns(4)
+@st.cache_data
+def load_master_catalog():
+    if not os.path.exists(MASTER_CATALOG_FILE):
+        return None, None
+
+    try:
+        raw = pd.read_excel(MASTER_CATALOG_FILE, engine="openpyxl", header=None)
+        header_row = 0
+
+        for idx, row in raw.iterrows():
+            vals = [str(v).strip().lower() for v in row.values if pd.notna(v)]
+            if any("category" in v for v in vals) and any("vendor" in v for v in vals):
+                header_row = idx
+                break
+
+        df = pd.read_excel(MASTER_CATALOG_FILE, engine="openpyxl", header=header_row)
+        df.columns = [str(col).strip() for col in df.columns]
+
+        hyperlink_map = extract_hyperlink_map_from_excel(MASTER_CATALOG_FILE)
+
+        df = normalize_columns(df)
+        df = clean_df(df)
+        df["Hyperlink"] = df["File Name"].map(hyperlink_map).fillna("")
+
+        df, exploded = explode_services(df)
+        return df, exploded
+
+    except Exception as exc:
+        st.warning(f"Master catalog error: {exc}")
+        return None, None
 
 
-def kpi_card(col, value, label, color):
-    col.markdown(
-        "<div class='kpi-box' style='background:{}'>"
-        "<div class='kpi-value'>{}</div>"
-        "<div class='kpi-label'>{}</div>"
-        "</div>".format(color, value, label),
-        unsafe_allow_html=True,
-    )
+@st.cache_data
+def load_dummy_data():
+    if not os.path.exists(DUMMY_CATALOG_FILE):
+        return None, None
+
+    try:
+        df = pd.read_csv(DUMMY_CATALOG_FILE)
+        df.columns = [str(col).strip() for col in df.columns]
+
+        df = normalize_columns(df)
+        df = clean_df(df)
+        df["Hyperlink"] = ""
+
+        df, exploded = explode_services(df)
+        return df, exploded
+
+    except Exception as exc:
+        st.warning(f"Dummy data error: {exc}")
+        return None, None
 
 
-kpi_card(c1, d_filt["File Name"].nunique(),  "Total Quotes",    "#D04A02")
-kpi_card(c2, d_filt["Service"].nunique(),    "Unique Services", "#295477")
-kpi_card(c3, d_filt["Vendor"].nunique(),     "Vendors",         "#299D8F")
-kpi_card(c4, d_filt["Category"].nunique(),   "Categories",      "#2D2D2D")
+def ensure_dummy_data():
+    if os.path.exists(DUMMY_CATALOG_FILE):
+        return
 
-st.markdown("<br>", unsafe_allow_html=True)
+    import random
 
+    random.seed(42)
 
-# ════════════════════════════════════════════════════════════
-# CHART HELPERS
-# ════════════════════════════════════════════════════════════
-CFONT = dict(
-    family="Source Sans Pro, Helvetica Neue, Arial",
-    size=11,
-    color="#2D2D2D",
-)
-CBG = "#F3F3F3"
+    vendors = [
+        "NTT Data",
+        "Dimension Data",
+        "Telstra",
+        "Optus",
+        "Vocus",
+        "Datacom",
+    ]
 
+    categories = {
+        "Cybersecurity": [
+            "Endpoint Protection",
+            "SIEM Monitoring",
+            "Privileged Access Mgmt",
+            "Security Awareness",
+            "Network Access Control",
+        ],
+        "Network & Telecom": [
+            "Cisco Catalyst 9200-L",
+            "Cisco Catalyst 9400",
+            "Palo Alto NGFW",
+            "SD-WAN Solution",
+            "Cisco Meraki MX",
+        ],
+        "Hosting": [
+            "VMware vSphere",
+            "NetApp Storage",
+            "Oracle DB License",
+            "Colocation Build",
+            "Backup & Recovery",
+        ],
+        "M365 & Power Platform": [
+            "M365 E3 License",
+            "M365 E5 License",
+            "Power BI Premium",
+            "Teams Rooms",
+        ],
+    }
 
-def section_title(txt, caption=""):
-    st.markdown(
-        "<div style='font-size:0.78em;font-weight:700;"
-        "letter-spacing:1px;text-transform:uppercase;"
-        "color:#D04A02;margin-bottom:4px'>{}</div>".format(txt),
-        unsafe_allow_html=True)
-    if caption:
-        st.caption(caption)
+    rows = []
+    for category, services in categories.items():
+        for service in services:
+            vendor_count = random.randint(2, 4)
+            chosen_vendors = random.sample(vendors, vendor_count)
 
+            for vendor in chosen_vendors:
+                base = random.uniform(20000, 200000)
+                price = round(base * random.uniform(0.85, 1.15), 2)
+                filename = "{}_{}_{}.pdf".format(
+                    vendor.replace(" ", "_"),
+                    service.replace(" ", "_")[:15],
+                    random.randint(1000, 9999),
+                )
 
-# ════════════════════════════════════════════════════════════
-# TABS
-# ════════════════════════════════════════════════════════════
-tab_charts, tab_table = st.tabs(["📊 Analytics", "📄 Data Table"])
-
-with tab_charts:
-
-    col_l, col_r = st.columns(2, gap="large")
-
-    # Chart 1 — Service overlap
-    with col_l:
-        section_title(
-            "SERVICE OVERLAP ANALYSIS",
-            "Orange = same service quoted by multiple vendors — "
-            "competitive procurement opportunity.")
-        shared = (
-            d_filt.groupby("Service")["Vendor"].nunique()
-            .sort_values(ascending=False).head(20).reset_index()
-        )
-        shared.columns = ["Service", "Vendor Count"]
-        shared["Color"] = shared["Vendor Count"].apply(
-            lambda x: "#D04A02" if x > 1 else "#C0C0C0")
-        fig1 = go.Figure(go.Bar(
-            x=shared["Vendor Count"],
-            y=shared["Service"].str[:44],
-            orientation="h",
-            marker_color=shared["Color"],
-            marker_line_width=0,
-            text=shared["Vendor Count"],
-            textposition="outside",
-            textfont=dict(size=10),
-        ))
-        fig1.update_layout(
-            height=500,
-            plot_bgcolor=CBG,
-            paper_bgcolor=CBG,
-            margin=dict(l=5, r=40, t=20, b=10),
-            font=CFONT,
-            xaxis=dict(
-                title="Number of Vendors",
-                showgrid=True,
-                gridcolor="#E0E0E0",
-                zeroline=False),
-            yaxis=dict(
-                autorange="reversed",
-                tickfont=dict(size=9.5)),
-            bargap=0.35,
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-
-    # Chart 2 — Vendor coverage
-    with col_r:
-        section_title(
-            "VENDOR SERVICE COVERAGE",
-            "Number of unique services each vendor provides. "
-            "Higher = broader vendor capability.")
-        spv = (
-            d_filt.groupby("Vendor")["Service"].nunique()
-            .sort_values(ascending=False).reset_index()
-        )
-        spv.columns = ["Vendor", "Count"]
-        spv["Color"] = [
-            vendor_color_map.get(v, "#8C8C8C") for v in spv["Vendor"]
-        ]
-        fig2 = go.Figure(go.Bar(
-            x=spv["Vendor"],
-            y=spv["Count"],
-            marker_color=spv["Color"],
-            marker_line_width=0,
-            text=spv["Count"],
-            textposition="outside",
-            textfont=dict(size=10),
-        ))
-        fig2.update_layout(
-            height=500,
-            plot_bgcolor=CBG,
-            paper_bgcolor=CBG,
-            margin=dict(l=5, r=10, t=20, b=10),
-            font=CFONT,
-            yaxis=dict(
-                title="Unique Services",
-                showgrid=True,
-                gridcolor="#E0E0E0",
-                zeroline=False),
-            xaxis=dict(
-                tickangle=-35,
-                tickfont=dict(size=9.5)),
-            bargap=0.35,
-        )
-        st.plotly_chart(fig2, use_container_width=True)
-
-    # Chart 3 — Category donut
-    section_title(
-        "PROCUREMENT CATEGORY DISTRIBUTION",
-        "Share of quote files across IT procurement categories.")
-    cat_counts = (
-        d_filt.drop_duplicates(subset=["Category", "File Name"])
-        .groupby("Category").size().reset_index()
-    )
-    cat_counts.columns = ["Category", "Count"]
-    if not cat_counts.empty:
-        fig3 = px.pie(
-            cat_counts,
-            names="Category",
-            values="Count",
-            hole=0.50,
-            color_discrete_sequence=COLORS,
-        )
-        fig3.update_traces(
-            textposition="outside",
-            textinfo="label+percent",
-            textfont_size=11,
-            pull=[0.03] * len(cat_counts),
-        )
-        fig3.update_layout(
-            height=420,
-            margin=dict(l=20, r=20, t=20, b=20),
-            paper_bgcolor=CBG,
-            font=CFONT,
-            legend=dict(
-                orientation="v",
-                x=1.02, y=0.5,
-                font=dict(size=10)),
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-
-with tab_table:
-    dm_display = df_master.copy()
-    if selected_cat    != "All":
-        dm_display = dm_display[dm_display["Category"] == selected_cat]
-    if selected_vendor != "All":
-        dm_display = dm_display[dm_display["Vendor"]   == selected_vendor]
-    st.dataframe(
-        dm_display.drop(
-            columns=["Services List", "Hyperlink"], errors="ignore"),
-        use_container_width=True,
-        height=450,
-    )
-
-
-# ════════════════════════════════════════════════════════════
-# SERVICE SELECTION RESULTS
-# ════════════════════════════════════════════════════════════
-st.markdown(
-    "<hr style='border:none;border-top:2px solid #D04A02;"
-    "margin:24px 0 16px'>",
-    unsafe_allow_html=True)
-
-section_title("SERVICE SELECTION & QUOTATION ANALYSIS")
-st.markdown(
-    "<p style='color:#2D2D2D;font-size:1em;margin-bottom:16px'>"
-    "Select services from the sidebar to begin analysis.</p>",
-    unsafe_allow_html=True)
-
-if not selected_svcs:
-    st.info(
-        "👈 **Select one or more services** from the sidebar. "
-        "Results show vendor, quotation file and clickable file link.")
-else:
-    d_sel = d_filt[d_filt["Service"].isin(selected_svcs)].copy()
-
-    if d_sel.empty:
-        st.warning("No results found under current filters.")
-    else:
-        vendor_svc_map = defaultdict(set)
-        for _, row in d_sel.iterrows():
-            vendor_svc_map[row["Vendor"]].add(row["Service"])
-
-        vendors_all  = sorted([
-            v for v, s in vendor_svc_map.items()
-            if set(selected_svcs).issubset(s)
-        ])
-        vendors_some = sorted([
-            v for v, s in vendor_svc_map.items()
-            if not set(selected_svcs).issubset(s)
-        ])
-
-        # Summary banners
-        if len(selected_svcs) > 1:
-            if vendors_all:
-                names = " · ".join(
-                    ["**{}**".format(v) for v in vendors_all])
-                st.success(
-                    "✅ **{} vendor(s) offer ALL {} services:** {}".format(
-                        len(vendors_all), len(selected_svcs), names))
-            else:
-                st.warning(
-                    "No single vendor covers all {} "
-                    "selected services.".format(len(selected_svcs)))
-
-            # ── FIX: Plain st.expander — no emoji prefix ──────
-            if vendors_some:
-                with st.expander(
-                        "Vendors with partial coverage",
-                        expanded=False):
-                    for v in vendors_some:
-                        covered = vendor_svc_map[v].intersection(
-                            set(selected_svcs))
-                        color   = vendor_color_map.get(v, "#8C8C8C")
-                        st.markdown(
-                            "<span class='vendor-badge' "
-                            "style='background:{}'>{}</span>"
-                            " &nbsp; covers **{}/{}**: _{}_".format(
-                                color, v,
-                                len(covered), len(selected_svcs),
-                                ", ".join(sorted(covered))),
-                            unsafe_allow_html=True)
-
-        section_title(
-            "DETAILED QUOTATION BREAKDOWN — PER SERVICE",
-            "Each service shows the vendor, file name "
-            "and a direct link to the quotation file.")
-
-        has_price = "Quoted Price" in d_sel.columns
-
-        for svc in selected_svcs:
-            d_svc = (
-                d_sel[d_sel["Service"] == svc]
-                .drop_duplicates(subset=["Vendor", "File Name"])
-                .sort_values("Vendor")
-            )
-            vendor_count = d_svc["Vendor"].nunique()
-            shared_tag   = (
-                "SHARED BY MULTIPLE VENDORS"
-                if vendor_count > 1 else "SINGLE VENDOR"
-            )
-
-            with st.expander(
-                "{} — {} vendor(s) · {} file(s) · {}".format(
-                    svc, vendor_count, len(d_svc), shared_tag),
-                expanded=True,
-            ):
-                # Vendor badges row
-                badges = " ".join([
-                    "<span class='vendor-badge' "
-                    "style='background:{}'>{}</span>".format(
-                        vendor_color_map.get(v, "#8C8C8C"), v)
-                    for v in sorted(d_svc["Vendor"].unique())
-                ])
-                st.markdown(
-                    "<div style='margin-bottom:14px'>"
-                    "<b style='font-size:0.88em'>"
-                    "Vendors offering this service:</b>"
-                    "&nbsp;&nbsp;{}</div>".format(badges),
-                    unsafe_allow_html=True)
-
-                # Fixed-layout HTML table
-                rows = [
-                    "<table class='svc-table'>"
-                    "<thead><tr>"
-                    "<th>Vendor</th>"
-                    "<th>Category</th>"
-                    "<th>File Name</th>"
-                ]
-                if has_price:
-                    rows.append("<th>Quoted Price</th>")
                 rows.append(
-                    "<th>File Link</th>"
-                    "</tr></thead><tbody>"
+                    {
+                        "Category": category,
+                        "Vendor": vendor,
+                        "File Name": filename,
+                        "Comments": service,
+                        "Quoted Price": price,
+                    }
                 )
 
-                for i, (_, row) in enumerate(d_svc.iterrows()):
-                    bg    = "#ffffff" if i % 2 == 0 else "#F3F3F3"
-                    color = vendor_color_map.get(row["Vendor"], "#8C8C8C")
-                    fname = str(row.get("File Name", "")).strip()
+    pd.DataFrame(rows).to_csv(DUMMY_CATALOG_FILE, index=False)
 
-                    v_cell = (
-                        "<span class='vendor-badge' "
-                        "style='background:{}'>{}</span>".format(
-                            color, row["Vendor"])
-                    )
 
-                    fn_cell = (
-                        "<span style='font-family:monospace;"
-                        "font-size:0.80em;word-break:break-all;"
-                        "color:#2D2D2D'>{}</span>".format(fname)
-                    )
+# ============================================================
+# DOMAIN HELPERS
+# ============================================================
 
-                    url = str(row.get("Hyperlink", "")).strip()
-                    if not url or url == "nan":
-                        url = str(row.get("File Link", "")).strip()
-                    if not url or url == "nan":
-                        url = str(row.get("File URL",  "")).strip()
-                    if url == "nan":
-                        url = ""
+def infer_subcategory(category, comments, filename):
+    text = f"{comments} {filename}".lower()
+    category_text = str(category).lower().strip()
 
-                    if url and url.startswith("http"):
-                        link_cell = (
-                            "<a href='{}' target='_blank' "
-                            "style='color:#D04A02;font-weight:600;"
-                            "font-size:0.82em;text-decoration:none'>"
-                            "Open file</a>".format(url)
-                        )
-                    else:
-                        link_cell = (
-                            "<span style='color:#bbb;"
-                            "font-size:0.80em'>—</span>"
-                        )
+    if "cybersecurity" in category_text:
+        if any(key in text for key in ["trendmicro", "endpoint", "antivirus"]):
+            return "Endpoint Protection"
+        if any(key in text for key in ["cyberark", "privileged", "pam"]):
+            return "Privileged Access"
+        if any(key in text for key in ["knowbe4", "awareness", "phishing"]):
+            return "Security Awareness"
+        if any(key in text for key in ["forescout", "nac"]):
+            return "Network Access Control"
+        if any(key in text for key in ["siem", "splunk", "monitor"]):
+            return "SIEM / Monitoring"
+        return "General Security"
 
-                    pval   = str(row.get("Quoted Price", "")).strip()
-                    p_cell = (
-                        "<span style='color:#22992E;font-weight:700;"
-                        "font-family:monospace'>{}</span>".format(pval)
-                        if pval and pval not in ["", "nan", "0"]
-                        else "<span style='color:#bbb'>—</span>"
-                    )
+    if "network" in category_text or "telecom" in category_text:
+        if "meraki" in text:
+            return "Cisco Meraki"
+        if "palo alto" in text:
+            return "Palo Alto NGFW"
+        if "equinix" in text:
+            return "Equinix"
+        if "cisco" in text:
+            return "Cisco Networking"
+        return "General Network"
 
-                    rows.append(
-                        "<tr style='background:{}'>"
-                        "<td>{}</td>"
-                        "<td style='color:#555'>{}</td>"
-                        "<td>{}</td>".format(
-                            bg, v_cell, row["Category"], fn_cell)
-                    )
-                    if has_price:
-                        rows.append("<td>{}</td>".format(p_cell))
-                    rows.append("<td>{}</td></tr>".format(link_cell))
+    if "hosting" in category_text:
+        if any(key in text for key in ["vmware", "vcf"]):
+            return "VMware"
+        if "oracle" in text:
+            return "Oracle DB"
+        if "netapp" in text:
+            return "NetApp"
+        if any(key in text for key in ["colo", "colocation"]):
+            return "Colocation"
+        return "General Hosting"
 
-                rows.append("</tbody></table>")
-                st.markdown("".join(rows), unsafe_allow_html=True)
+    if "m365" in category_text:
+        return "M365 Licensing"
+    if "idam" in category_text:
+        return "Identity Migration"
+    if "snow" in category_text:
+        return "ServiceNow ITSM"
+    if "summary" in category_text:
+        return "Reporting"
 
-                # ── Mini chart — Quote files per vendor only ──
-                # (pie chart removed as requested)
-                st.markdown("<br>", unsafe_allow_html=True)
-                section_title("QUOTE FILES PER VENDOR — THIS SERVICE")
+    return str(category).strip().title()
 
-                vc_counts = (
-                    d_svc.groupby("Vendor").size().reset_index()
-                )
-                vc_counts.columns = ["Vendor", "Files"]
-                vc_counts["Color"] = [
-                    vendor_color_map.get(v, "#8C8C8C")
-                    for v in vc_counts["Vendor"]
-                ]
-                mfig1 = go.Figure(go.Bar(
-                    x=vc_counts["Vendor"],
-                    y=vc_counts["Files"],
-                    marker_color=vc_counts["Color"],
-                    marker_line_width=0,
-                    text=vc_counts["Files"],
-                    textposition="outside",
-                ))
-                mfig1.update_layout(
-                    height=300,
-                    plot_bgcolor=CBG,
-                    paper_bgcolor=CBG,
-                    margin=dict(l=5, r=10, t=20, b=10),
-                    font=CFONT,
-                    yaxis=dict(
-                        title="Number of Quote Files",
-                        showgrid=True,
-                        gridcolor="#E0E0E0",
-                        zeroline=False),
-                    xaxis=dict(tickangle=-20),
-                    bargap=0.4,
-                )
-                st.plotly_chart(mfig1, use_container_width=True)
 
-        # Shared services summary
-        shared_svcs = [
-            s for s in selected_svcs
-            if d_sel[d_sel["Service"] == s]["Vendor"].nunique() > 1
-        ]
-        if shared_svcs:
-            with st.expander(
-                "Shared Services — same service by multiple vendors",
-                expanded=False,
-            ):
-                for s in shared_svcs:
-                    vlist  = sorted(
-                        d_sel[d_sel["Service"] == s]["Vendor"].unique())
-                    badges = " ".join([
-                        "<span class='vendor-badge' "
-                        "style='background:{}'>{}</span>".format(
-                            vendor_color_map.get(v, "#8C8C8C"), v)
-                        for v in vlist
-                    ])
-                    st.markdown(
-                        "<div style='margin-bottom:10px'>"
-                        "<b>{}</b> &nbsp;→&nbsp; {}</div>".format(
-                            s, badges),
-                        unsafe_allow_html=True)
+def resolve_url(row) -> str:
+    for col in ["Hyperlink", "File Link"]:
+        value = str(row.get(col, "")).strip()
+        if value and value not in ["", "nan"] and value.startswith("http"):
+            return value
+
+    filename = str(row.get("File Name", "")).strip()
+    if filename:
+        local_path = os.path.join(DEMO_DIR, filename)
+        if os.path.exists(local_path):
+            return local_path
+
+    return ""
+
+
+def vendor_color_maps(df_master, df_dummy):
+    master_map = {}
+    dummy_map = {}
+
+    if df_master is not None and not df_master.empty:
+        for idx, vendor in enumerate(sorted(df_master["Vendor"].unique())):
+            master_map[vendor] = CHART_SEQ[idx % len(CHART_SEQ)]
+
+    if df_dummy is not None and not df_dummy.empty:
+        for idx, vendor in enumerate(sorted(df_dummy["Vendor"].unique())):
+            dummy_map[vendor] = CHART_SEQ[idx % len(CHART_SEQ)]
+
+    return master_map, dummy_map
