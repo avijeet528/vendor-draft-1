@@ -2819,3 +2819,905 @@ def render_browse_verdict(
             has_prices=has_prices,
             chat_key=chat_key_suffix,
         )
+
+# ============================================================
+# PART 4 — APP STATE, DATA LOADING, MAIN LAYOUT, TABS
+# ============================================================
+
+def init_session_defaults():
+    defaults = [
+        ("tab2_upload_price", 0.0),
+        ("tab2_upload_fname", ""),
+        ("tab2_file_bytes", None),
+        ("tab2_file_ext", ""),
+        ("chat_redirect_upload", False),
+        ("gh_prices_loaded", False),
+        ("real_analysis_done", False),
+        ("real_analysis_df", None),
+    ]
+
+    for key, value in defaults:
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def apply_uploaded_catalog_if_present(df_master, df_exp_master):
+    if "uploaded_catalog_df" in st.session_state and "uploaded_catalog_exp" in st.session_state:
+        return st.session_state["uploaded_catalog_df"], st.session_state["uploaded_catalog_exp"]
+    return df_master, df_exp_master
+
+
+def render_main_header():
+    st.markdown(
+        "<div style='background:#2D2D2D;color:white;padding:24px 32px;border-radius:4px;"
+        "border-left:8px solid #D04A02;margin-bottom:20px'>"
+        "<div style='font-size:0.68em;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;"
+        "color:#D04A02;margin-bottom:8px'>"
+        "IT PROCUREMENT · INTELLIGENCE DASHBOARD</div>"
+        "<h1 style='margin:0;font-size:1.85em;font-weight:700;color:white;font-family:Georgia,serif'>"
+        "Procurement Intelligence Dashboard</h1>"
+        "<p style='margin:8px 0 0;opacity:0.5;font-size:0.85em'>"
+        "Master Catalog (Excel) · Dummy Data (CSV) · Browse &amp; Verdict · Upload &amp; Score · "
+        "Vendor Analysis</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_top_kpis(df_master, df_exp_master, df_dummy, df_exp_dummy, no_master, no_dummy):
+    left, right = st.columns(2, gap="large")
+
+    with left:
+        st.markdown(
+            "<div class='bucket-header'>📁 MASTER CATALOG (Excel)</div>",
+            unsafe_allow_html=True,
+        )
+        if not no_master:
+            k1, k2, k3, k4 = st.columns(4)
+            kpi_box(k1, df_master["File Name"].nunique(), "Quotes", C_ORANGE)
+            kpi_box(k2, df_exp_master["Service"].nunique(), "Services", C_DARK)
+            kpi_box(k3, df_master["Vendor"].nunique(), "Vendors", C_MID)
+            kpi_box(k4, df_master["Category"].nunique(), "Categories", C_GREY_DARK)
+        else:
+            st.warning("Master Catalog.xlsx not found.")
+
+    with right:
+        st.markdown(
+            "<div class='bucket-header'>📊 DUMMY DATA (CSV — with prices)</div>",
+            unsafe_allow_html=True,
+        )
+        if not no_dummy:
+            k1, k2, k3, k4 = st.columns(4)
+            kpi_box(k1, df_dummy["File Name"].nunique(), "Quotes", C_ORANGE)
+            kpi_box(k2, df_exp_dummy["Service"].nunique(), "Services", C_DARK)
+            kpi_box(k3, df_dummy["Vendor"].nunique(), "Vendors", C_MID)
+            kpi_box(k4, df_dummy["Category"].nunique(), "Categories", C_GREY_DARK)
+        else:
+            st.warning("dummy_catalog.csv not found.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+
+def render_category_nav_strip(df_master, no_master):
+    if no_master:
+        return
+
+    categories = sorted(
+        [
+            category
+            for category in df_master["Category"].unique()
+            if str(category).strip() not in ["", "nan"]
+        ]
+    )
+
+    nav_cols = st.columns(len(categories) + 1)
+    nav_cols[0].markdown(
+        "<div style='font-size:0.72em;font-weight:700;color:#D04A02;letter-spacing:1px;"
+        "text-transform:uppercase;padding-top:4px'>CATEGORIES</div>",
+        unsafe_allow_html=True,
+    )
+
+    for idx, category in enumerate(categories):
+        count = len(df_master[df_master["Category"] == category])
+        nav_cols[idx + 1].markdown(
+            "<div style='background:white;border:1px solid #E0E0E0;border-top:3px solid #D04A02;"
+            "border-radius:4px;padding:8px 10px;text-align:center'>"
+            "<div style='font-size:0.72em;font-weight:700;color:#2D2D2D;white-space:nowrap;"
+            "overflow:hidden;text-overflow:ellipsis'>{}</div>"
+            "<div style='font-size:1.1em;font-weight:800;color:#D04A02;font-family:Georgia,serif'>{}</div>"
+            "<div style='font-size:0.63em;color:#7D7D7D;text-transform:uppercase;letter-spacing:0.5px'>"
+            "quotes</div></div>".format(category, count),
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+
+def render_upload_and_score_tab(df_master, df_exp_master, df_dummy, df_exp_dummy, no_dummy):
+    st.markdown(
+        "<div class='bucket-header'>📤 UPLOAD &amp; SCORE</div>",
+        unsafe_allow_html=True,
+    )
+
+    benchmark_df = df_dummy if not no_dummy else df_master
+    benchmark_exp_df = df_exp_dummy if not no_dummy else df_exp_master
+    benchmark_label = "Dummy Data" if not no_dummy else "Master Catalog"
+
+    if benchmark_df is None:
+        st.info("No catalog loaded for benchmarking.")
+        return
+
+    insight("Benchmarking against: <b>{}</b>".format(benchmark_label))
+
+    prefill_price = st.session_state.get("tab2_upload_price", 0.0)
+    prefill_filename = st.session_state.get("tab2_upload_fname", "")
+
+    if prefill_filename:
+        st.markdown(
+            "<div class='insight-box'>"
+            "📎 From chat: <b>{}</b> — price: <b>{}</b>"
+            "</div>".format(
+                prefill_filename,
+                fmt_currency(prefill_price) if prefill_price > 0 else "not found",
+            ),
+            unsafe_allow_html=True,
+        )
+
+    sec("STEP 1 — UPLOAD QUOTE FILE")
+    uploaded_file = st.file_uploader(
+        "Upload",
+        type=["pdf", "xlsx", "xls", "docx"],
+        label_visibility="collapsed",
+        key="up_score_file",
+    )
+
+    new_price = 0.0
+    uploaded_filename = ""
+
+    if uploaded_file is not None:
+        content = uploaded_file.read()
+        ext = uploaded_file.name.rsplit(".", 1)[-1]
+        uploaded_filename = uploaded_file.name
+
+        st.success("Uploaded: **{}** ({} KB)".format(uploaded_filename, round(len(content) / 1024, 1)))
+
+        sec("STEP 2 — EXTRACTED PRICE")
+        with st.spinner("Extracting…"):
+            result = extract_price_from_bytes(content, ext)
+            new_price = result["price_num"]
+
+        if new_price > 0:
+            st.markdown(
+                "<div class='scard scard-orange'>"
+                "<div style='font-size:0.70em;font-weight:700;text-transform:uppercase;color:#D04A02'>"
+                "Extracted Price</div>"
+                "<div style='font-size:2.1em;font-weight:800;color:#D04A02;font-family:Georgia,serif'>"
+                "{}</div></div>".format(fmt_currency(new_price)),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.warning("Price not found automatically.")
+            manual_price = st.number_input(
+                "Enter price manually (USD)",
+                min_value=0.0,
+                step=100.0,
+                value=0.0,
+                key="manual_price_up",
+            )
+            if manual_price > 0:
+                new_price = manual_price
+
+    elif prefill_price > 0:
+        new_price = prefill_price
+        uploaded_filename = prefill_filename
+
+    sec("STEP 3 — SELECT SERVICES & FILTERS")
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        selected_category = st.selectbox(
+            "📂 Filter by Category",
+            ["All"] + sorted(
+                [
+                    category
+                    for category in benchmark_df["Category"].unique()
+                    if str(category).strip() not in ["", "nan"]
+                ]
+            ),
+            key="cat_up_score",
+        )
+
+    with c2:
+        services = sorted(
+            [
+                service
+                for service in benchmark_exp_df["Service"].unique()
+                if str(service).strip() not in ["", "nan"]
+            ]
+        )
+        service_search = st.text_input(
+            "🔍 Filter services",
+            placeholder="Search…",
+            key="svc_srch_score",
+        )
+        if service_search:
+            services = [service for service in services if service_search.lower() in service.lower()]
+
+    with c3:
+        selected_services = st.multiselect(
+            "🛠 Select Services",
+            options=services,
+            key="new_svcs_score",
+        )
+
+    sec("STEP 4 — COMPARISON & VERDICT")
+
+    if new_price <= 0 and not selected_services:
+        st.info("Upload a file and select services to compare.")
+        return
+
+    candidate_df = (
+        benchmark_exp_df[benchmark_exp_df["Service"].isin(selected_services)].copy()
+        if selected_services
+        else benchmark_exp_df.copy()
+    )
+
+    if selected_category != "All":
+        candidate_df = candidate_df[candidate_df["Category"] == selected_category]
+
+    if "Quoted Price" in candidate_df.columns:
+        comparison_df = candidate_df.drop_duplicates(subset=["File Name", "Vendor"])[
+            ["File Name", "Vendor", "Category", "Quoted Price"]
+        ].copy()
+    else:
+        comparison_df = candidate_df.drop_duplicates(subset=["File Name", "Vendor"])[
+            ["File Name", "Vendor", "Category"]
+        ].copy()
+
+    if comparison_df.empty:
+        st.warning("No historical quotes found.")
+        return
+
+    historical_prices = []
+    if "Quoted Price" in comparison_df.columns:
+        for _, row in comparison_df.iterrows():
+            quoted = parse_num(str(row.get("Quoted Price", "")).strip())
+            if quoted > 0:
+                historical_prices.append(quoted)
+
+    if new_price > 0 and historical_prices:
+        score, label, avg_hist, min_hist, max_hist = price_score(new_price, historical_prices)
+        verdict_title, verdict_desc, verdict_color = get_verdict(score)
+
+        css_key = "orange" if (score or 0) >= 70 else "mid" if (score or 0) >= 40 else "dark"
+        backgrounds = {"orange": "#FFF5F0", "mid": "#F5F5F5", "dark": "#F0F0F0"}
+        borders = {"orange": C_ORANGE, "mid": C_GREY_DARK, "dark": C_DARK}
+
+        st.markdown(
+            "<div style='background:{};border:2px solid {};border-radius:4px;padding:16px 20px;margin-bottom:16px'>"
+            "<div style='font-size:1.2em;font-weight:700;color:{};font-family:Georgia,serif'>{}</div>"
+            "<div style='font-size:0.87em;color:#4A4A4A;margin-top:5px'>{}</div>"
+            "</div>".format(
+                backgrounds[css_key],
+                borders[css_key],
+                borders[css_key],
+                verdict_title,
+                verdict_desc,
+            ),
+            unsafe_allow_html=True,
+        )
+
+        k1, k2, k3, k4 = st.columns(4)
+
+        k1.markdown(
+            "<div class='scard scard-orange'>"
+            "<div style='font-size:0.67em;font-weight:700;text-transform:uppercase;color:#D04A02'>Score</div>"
+            "<div style='font-size:2.1em;font-weight:800;color:#D04A02;font-family:Georgia,serif'>{}/100</div>"
+            "<div style='font-size:0.73em;color:#7D7D7D;margin-top:3px'>vs {} historical</div>"
+            "</div>".format(score if score is not None else "N/A", len(historical_prices)),
+            unsafe_allow_html=True,
+        )
+
+        k2.markdown(
+            "<div class='scard scard-dark'>"
+            "<div style='font-size:0.67em;font-weight:700;text-transform:uppercase;color:#2D2D2D'>Your Price</div>"
+            "<div style='font-size:2.1em;font-weight:800;color:#D04A02;font-family:Georgia,serif'>{}</div>"
+            "</div>".format(fmt_currency(new_price)),
+            unsafe_allow_html=True,
+        )
+
+        k3.markdown(
+            "<div class='scard scard-dark'>"
+            "<div style='font-size:0.67em;font-weight:700;text-transform:uppercase;color:#2D2D2D'>Market Average</div>"
+            "<div style='font-size:2.1em;font-weight:800;color:#4A4A4A;font-family:Georgia,serif'>{}</div>"
+            "<div style='font-size:0.72em;color:#7D7D7D;margin-top:3px'>min {} · max {}</div>"
+            "</div>".format(
+                fmt_currency(avg_hist),
+                fmt_currency(min_hist),
+                fmt_currency(max_hist),
+            ),
+            unsafe_allow_html=True,
+        )
+
+        k4.markdown(
+            "<div class='scard scard-grey'>"
+            "<div style='font-size:0.67em;font-weight:700;text-transform:uppercase;color:#7D7D7D'>vs Average</div>"
+            "<div style='font-size:0.95em;font-weight:800;color:#4A4A4A;margin-top:8px'>{}</div>"
+            "</div>".format(label),
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        sec("PRICE POSITIONING CHART")
+
+        chart_rows = []
+        if "Quoted Price" in comparison_df.columns:
+            for _, row in comparison_df.iterrows():
+                price_val = parse_num(str(row.get("Quoted Price", "")).strip())
+                if price_val > 0:
+                    chart_rows.append(
+                        {
+                            "Label": "{}/{}".format(row["Vendor"], str(row["File Name"])[:10]),
+                            "Price": price_val,
+                            "Type": "Historical",
+                        }
+                    )
+
+        chart_rows.append({"Label": "★ YOUR QUOTE", "Price": new_price, "Type": "New"})
+        chart_df = pd.DataFrame(chart_rows).sort_values("Price")
+
+        bar_colors = [C_ORANGE if t == "New" else C_DARK for t in chart_df["Type"]]
+
+        fig = go.Figure(
+            go.Bar(
+                x=chart_df["Label"],
+                y=chart_df["Price"],
+                marker_color=bar_colors,
+                marker_line_width=0,
+                text=chart_df["Price"].apply(fmt_currency),
+                textposition="outside",
+            )
+        )
+
+        fig.add_hline(
+            y=avg_hist,
+            line_dash="dash",
+            line_color=C_GREY_DARK,
+            line_width=2,
+            annotation_text="Avg: {}".format(fmt_currency(avg_hist)),
+            annotation_position="top right",
+        )
+
+        fig.update_layout(
+            height=380,
+            plot_bgcolor=CBG,
+            paper_bgcolor=CBG,
+            margin=dict(l=5, r=10, t=20, b=10),
+            font=CFONT,
+            yaxis=dict(title="Price (USD)", showgrid=True, gridcolor=C_GREY_LITE, zeroline=False),
+            xaxis=dict(tickangle=-25),
+            bargap=0.3,
+            showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        pct_vs_avg = round((new_price - avg_hist) / avg_hist * 100, 1) if avg_hist > 0 else 0
+        insight(
+            "Your quote <b>{}</b> is <b>{}% {}</b> market avg <b>{}</b>. "
+            "Range: <b>{}</b>–<b>{}</b>.".format(
+                fmt_currency(new_price),
+                abs(pct_vs_avg),
+                "below" if pct_vs_avg < 0 else "above",
+                fmt_currency(avg_hist),
+                fmt_currency(min_hist),
+                fmt_currency(max_hist),
+            )
+        )
+    else:
+        st.info("No historical price data. Select more services or use Dummy Data tab.")
+
+
+def render_data_table_tab(df_master, df_dummy):
+    st.markdown(
+        "<div class='bucket-header'>📄 DATA TABLE</div>",
+        unsafe_allow_html=True,
+    )
+
+    source_choice = st.radio(
+        "Data source",
+        ["Master Catalog", "Dummy Data"],
+        horizontal=True,
+        key="dt_src",
+    )
+
+    selected_df = df_master if source_choice == "Master Catalog" else df_dummy
+    selected_df = selected_df if selected_df is not None else pd.DataFrame()
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        category_options = (
+            ["All"] + sorted(
+                [
+                    category
+                    for category in selected_df.get("Category", pd.Series(dtype=str)).unique()
+                    if str(category).strip() not in ["", "nan"]
+                ]
+            )
+            if not selected_df.empty
+            else ["All"]
+        )
+        selected_category = st.selectbox("📂 Category", category_options, key="dt_cat")
+
+    with c2:
+        vendor_pool = selected_df if selected_category == "All" else selected_df[selected_df["Category"] == selected_category]
+        vendor_options = (
+            ["All"] + sorted(
+                [
+                    vendor
+                    for vendor in vendor_pool.get("Vendor", pd.Series(dtype=str)).unique()
+                    if str(vendor).strip() not in ["", "nan"]
+                ]
+            )
+            if not vendor_pool.empty
+            else ["All"]
+        )
+        selected_vendor = st.selectbox("🏢 Vendor", vendor_options, key="dt_ven")
+
+    with c3:
+        search_text = st.text_input("🔍 Search", placeholder="File name or comments…", key="dt_srch")
+
+    filtered_df = selected_df.copy()
+    if not filtered_df.empty:
+        if selected_category != "All":
+            filtered_df = filtered_df[filtered_df["Category"] == selected_category]
+        if selected_vendor != "All":
+            filtered_df = filtered_df[filtered_df["Vendor"] == selected_vendor]
+        if search_text:
+            mask = (
+                filtered_df["File Name"].str.contains(search_text, case=False, na=False)
+                | filtered_df["Comments"].str.contains(search_text, case=False, na=False)
+            )
+            filtered_df = filtered_df[mask]
+
+        st.markdown(
+            "<div style='font-size:0.82em;color:#7D7D7D;margin:8px 0'>"
+            "Showing <b>{}</b> of <b>{}</b> records</div>".format(
+                len(filtered_df),
+                len(selected_df),
+            ),
+            unsafe_allow_html=True,
+        )
+
+        st.dataframe(
+            filtered_df.drop(columns=["Services List", "Hyperlink"], errors="ignore"),
+            use_container_width=True,
+            height=520,
+        )
+    else:
+        st.info("No data available.")
+
+
+def render_upload_catalog_tab():
+    st.markdown(
+        "<div class='bucket-header'>🗂 UPLOAD CATALOG</div>",
+        unsafe_allow_html=True,
+    )
+
+    insight("Upload a new catalog to replace the current one. Supports Excel (.xlsx) and CSV formats.")
+
+    catalog_file = st.file_uploader(
+        "Upload",
+        type=["xlsx", "xls", "csv"],
+        label_visibility="collapsed",
+        key="catalog_upload",
+    )
+
+    if catalog_file is None:
+        return
+
+    file_bytes = catalog_file.read()
+    filename = catalog_file.name
+
+    with st.spinner("Analysing…"):
+        from io import BytesIO
+
+        ext = filename.rsplit(".", 1)[-1].lower()
+
+        try:
+            if ext in ("xlsx", "xls"):
+                df_new = pd.read_excel(BytesIO(file_bytes), engine="openpyxl")
+            else:
+                df_new = pd.read_csv(BytesIO(file_bytes))
+
+            df_new.columns = [str(col).strip() for col in df_new.columns]
+            df_new = normalize_columns(df_new)
+            df_new = clean_df(df_new)
+            df_new["Hyperlink"] = ""
+            df_new, df_exp_new = explode_services(df_new)
+
+            st.success(
+                "✅ **{}** rows · **{}** vendors · **{}** categories".format(
+                    len(df_new),
+                    df_new["Vendor"].nunique(),
+                    df_new["Category"].nunique(),
+                )
+            )
+
+            st.dataframe(
+                df_new.drop(columns=["Services List", "Hyperlink"], errors="ignore").head(20),
+                use_container_width=True,
+                height=280,
+            )
+
+            if st.button("✅ Apply as Master Catalog", type="primary"):
+                st.session_state["uploaded_catalog_df"] = df_new
+                st.session_state["uploaded_catalog_exp"] = df_exp_new
+                st.success("✅ Applied!")
+                st.rerun()
+
+        except Exception as exc:
+            st.error("❌ {}".format(exc))
+
+
+def render_vendor_analysis_tab(df_dummy, df_exp_dummy, vcmap_dummy, no_dummy):
+    st.markdown(
+        "<div class='bucket-header'>🔍 VENDOR ANALYSIS — DUMMY DATA (Full Price Analysis)</div>",
+        unsafe_allow_html=True,
+    )
+
+    if no_dummy:
+        st.info("Dummy data not available.")
+        return
+
+    sec("VENDOR PRICE SUMMARY", "Based on dummy data with actual prices")
+
+    working_df = df_dummy.copy()
+    if "Quoted Price" in working_df.columns:
+        working_df["Quoted Price"] = pd.to_numeric(working_df["Quoted Price"], errors="coerce")
+        vendor_table = (
+            working_df.groupby("Vendor")["Quoted Price"]
+            .agg(["mean", "min", "max", "count"])
+            .reset_index()
+        )
+    else:
+        vendor_table = pd.DataFrame()
+
+    if vendor_table.empty:
+        st.info("No vendor pricing data available.")
+        return
+
+    vendor_table.columns = ["Vendor", "Average", "Min", "Max", "Quotes"]
+    vendor_table = vendor_table.sort_values("Average")
+    overall_avg = vendor_table["Average"].mean()
+
+    k1, k2, k3, k4 = st.columns(4)
+    kpi_box(k1, len(df_dummy), "Total Quotes", C_ORANGE)
+    kpi_box(k2, df_dummy["Vendor"].nunique(), "Vendors", C_DARK)
+    kpi_box(k3, fmt_currency(overall_avg), "Overall Avg Quote", C_MID)
+    kpi_box(k4, df_exp_dummy["Service"].nunique(), "Services", C_GREY_DARK)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    bar_colors = [
+        C_ORANGE if idx == 0 else C_DARK if idx == len(vendor_table) - 1 else C_GREY_DARK
+        for idx in range(len(vendor_table))
+    ]
+
+    fig = go.Figure(
+        go.Bar(
+            x=vendor_table["Vendor"],
+            y=vendor_table["Average"],
+            marker_color=bar_colors,
+            marker_line_width=0,
+            text=vendor_table["Average"].apply(fmt_currency),
+            textposition="outside",
+        )
+    )
+    fig.add_hline(
+        y=overall_avg,
+        line_dash="dash",
+        line_color=C_MID,
+        line_width=2,
+        annotation_text="Avg: {}".format(fmt_currency(overall_avg)),
+        annotation_position="top right",
+    )
+    pwc_bar(fig, "Average Quote per Vendor", height=360)
+    fig.update_xaxes(tickangle=-20)
+    st.plotly_chart(fig, use_container_width=True)
+
+    sec("VENDOR RANKING TABLE")
+
+    table_rows = [
+        "<table class='comp-table'><thead><tr>"
+        "<th>Rank</th><th>Vendor</th><th>Quotes</th><th>Avg</th><th>Min</th><th>Max</th><th>vs Avg</th><th>Verdict</th>"
+        "</tr></thead><tbody>"
+    ]
+
+    for rank, (_, row) in enumerate(vendor_table.iterrows(), start=1):
+        bg = "white" if rank % 2 == 0 else "#F8F8F8"
+        vendor_color = vcmap_dummy.get(row["Vendor"], C_DARK)
+        pct = round((row["Average"] - overall_avg) / overall_avg * 100, 1) if overall_avg > 0 else 0
+        pct_color = C_ORANGE if pct < -5 else C_DARK if pct > 5 else C_GREY_DARK
+        pct_text = "{}% below".format(abs(pct)) if pct < 0 else "{}% above".format(abs(pct)) if pct > 0 else "At avg"
+        overall_verdict = (
+            ("✅ COMPETITIVE", C_ORANGE)
+            if pct < -10
+            else ("🔴 EXPENSIVE", C_DARK)
+            if pct > 10
+            else ("🟡 AVERAGE", C_GREY_DARK)
+        )
+        medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else str(rank)
+
+        table_rows.append(
+            "<tr style='background:{}'>"
+            "<td style='text-align:center;font-size:1.05em'>{}</td>"
+            "<td>{}</td>"
+            "<td style='text-align:center;font-weight:700'>{}</td>"
+            "<td style='font-family:monospace;font-weight:700;color:#D04A02'>{}</td>"
+            "<td style='font-family:monospace;color:#D04A02'>{}</td>"
+            "<td style='font-family:monospace;color:#2D2D2D'>{}</td>"
+            "<td style='color:{}'>{}</td>"
+            "<td style='color:{};font-weight:700'>{}</td>"
+            "</tr>".format(
+                bg,
+                medal,
+                vpill(row["Vendor"], vendor_color),
+                int(row["Quotes"]),
+                fmt_currency(row["Average"]),
+                fmt_currency(row["Min"]),
+                fmt_currency(row["Max"]),
+                pct_color,
+                pct_text,
+                overall_verdict[1],
+                overall_verdict[0],
+            )
+        )
+
+    table_rows.append("</tbody></table>")
+    render_html_table(table_rows)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    sec("PER-SERVICE PRICE BENCHMARKING", "Services with multiple vendor quotes")
+
+    service_rows = []
+    for _, row in df_dummy.iterrows():
+        raw_services = (
+            str(row.get("Comments", ""))
+            .replace("\\n", "\n")
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+        )
+        services = [
+            service.strip()
+            for service in raw_services.split("\n")
+            if service.strip() and service.strip() not in ["nan", "None", ""]
+        ]
+        if not services:
+            services = [raw_services.strip()]
+
+        for service in services:
+            service_rows.append(
+                {
+                    "Service": service,
+                    "Vendor": row["Vendor"],
+                    "Price": parse_num(str(row.get("Quoted Price", "")).strip()),
+                }
+            )
+
+    service_df = pd.DataFrame(service_rows)
+    service_df = service_df[service_df["Price"] > 0]
+
+    service_vendor_counts = service_df.groupby("Service")["Vendor"].nunique()
+    multi_vendor_services = service_vendor_counts[service_vendor_counts > 1].index.tolist()
+
+    if not multi_vendor_services:
+        st.info("No multi-vendor services.")
+    else:
+        insight("<b>{}</b> services with multi-vendor quotes.".format(len(multi_vendor_services)))
+
+        for service in sorted(multi_vendor_services)[:10]:
+            service_slice = service_df[service_df["Service"] == service].sort_values("Price")
+            min_price = service_slice["Price"].min()
+            max_price = service_slice["Price"].max()
+            avg_price = service_slice["Price"].mean()
+            best_vendor = service_slice.loc[service_slice["Price"].idxmin(), "Vendor"]
+            worst_vendor = service_slice.loc[service_slice["Price"].idxmax(), "Vendor"]
+            spread = round((max_price - min_price) / min_price * 100, 1) if min_price > 0 else 0
+
+            st.markdown(
+                "<div style='background:white;border-left:4px solid {};padding:10px 14px;border-radius:2px;margin:10px 0;font-weight:700;font-size:0.88em'>"
+                "{} · {} vendors · spread {}% · best: {} @ {}"
+                "</div>".format(
+                    C_ORANGE,
+                    service,
+                    service_slice["Vendor"].nunique(),
+                    spread,
+                    best_vendor,
+                    fmt_currency(min_price),
+                ),
+                unsafe_allow_html=True,
+            )
+
+            bar_colors = [
+                C_ORANGE if vendor == best_vendor else C_DARK if vendor == worst_vendor else C_GREY_DARK
+                for vendor in service_slice["Vendor"]
+            ]
+
+            fig = go.Figure(
+                go.Bar(
+                    x=service_slice["Vendor"],
+                    y=service_slice["Price"],
+                    marker_color=bar_colors,
+                    marker_line_width=0,
+                    text=service_slice["Price"].apply(fmt_currency),
+                    textposition="outside",
+                )
+            )
+
+            fig.add_hline(
+                y=avg_price,
+                line_dash="dash",
+                line_color=C_MID,
+                line_width=1.5,
+                annotation_text="Avg: {}".format(fmt_currency(avg_price)),
+                annotation_position="top right",
+            )
+
+            fig.update_layout(
+                height=240,
+                plot_bgcolor=CBG,
+                paper_bgcolor=CBG,
+                margin=dict(l=5, r=10, t=12, b=8),
+                font=CFONT,
+                yaxis=dict(showgrid=True, gridcolor=C_GREY_LITE, zeroline=False),
+                bargap=0.4,
+                showlegend=False,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.download_button(
+        "📥 Download Dummy Data CSV",
+        data=df_dummy.to_csv(index=False),
+        file_name="dummy_analysis.csv",
+        mime="text/csv",
+        type="primary",
+    )
+
+
+# ============================================================
+# APP BOOTSTRAP
+# ============================================================
+
+init_session_defaults()
+ensure_dummy_data()
+
+df_master, df_exp_master = load_master_catalog()
+df_dummy, df_exp_dummy = load_dummy_data()
+
+df_master, df_exp_master = apply_uploaded_catalog_if_present(df_master, df_exp_master)
+
+NO_MASTER = df_master is None or df_master.empty
+NO_DUMMY = df_dummy is None or df_dummy.empty
+
+vcmap_master, vcmap_dummy = vendor_color_maps(df_master, df_dummy)
+vendor_color_map = vcmap_master if not NO_MASTER else vcmap_dummy
+
+render_main_header()
+render_top_kpis(df_master, df_exp_master, df_dummy, df_exp_dummy, NO_MASTER, NO_DUMMY)
+render_category_nav_strip(df_master, NO_MASTER)
+
+
+# ============================================================
+# MAIN TABS
+# ============================================================
+
+(
+    tab_mc_ov,
+    tab_mc_bv,
+    tab_dd_ov,
+    tab_dd_bv,
+    tab_upload,
+    tab_data,
+    tab_upload_cat,
+    tab_vendor,
+) = st.tabs(
+    [
+        "📁 MC — Catalog Overview",
+        "📁 MC — Browse & Verdict",
+        "📊 DD — Catalog Overview",
+        "📊 DD — Browse & Verdict",
+        "📤 Upload & Score",
+        "📄 Data Table",
+        "🗂 Upload Catalog",
+        "🔍 Vendor Analysis",
+    ]
+)
+
+
+with tab_mc_ov:
+    st.markdown(
+        "<div class='bucket-header'>📁 MASTER CATALOG — CATALOG OVERVIEW</div>",
+        unsafe_allow_html=True,
+    )
+    if NO_MASTER:
+        st.info("Master Catalog.xlsx not found.")
+    else:
+        render_catalog_overview(df_master, df_exp_master, label="Master Catalog")
+
+
+with tab_mc_bv:
+    st.markdown(
+        "<div class='bucket-header'>"
+        "📁 MASTER CATALOG — BROWSE &amp; VERDICT"
+        "<span style='font-size:0.8em;opacity:0.7;margin-left:12px'>"
+        "No prices available (SharePoint files)</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    if NO_MASTER:
+        st.info("Master Catalog.xlsx not found.")
+    else:
+        render_browse_verdict(
+            df_master=df_master,
+            df_exploded=df_exp_master,
+            vcmap=vcmap_master,
+            label="Master Catalog",
+            has_prices=False,
+            chat_key_suffix="mc",
+        )
+
+
+with tab_dd_ov:
+    st.markdown(
+        "<div class='bucket-header'>"
+        "📊 DUMMY DATA — CATALOG OVERVIEW"
+        "<span style='font-size:0.8em;opacity:0.7;margin-left:12px'>"
+        "Full price analysis available</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    if NO_DUMMY:
+        st.info("dummy_catalog.csv not found.")
+    else:
+        render_catalog_overview(df_dummy, df_exp_dummy, label="Dummy Data")
+
+
+with tab_dd_bv:
+    st.markdown(
+        "<div class='bucket-header'>"
+        "📊 DUMMY DATA — BROWSE &amp; VERDICT"
+        "<span style='font-size:0.8em;opacity:0.7;margin-left:12px'>"
+        "✅ Full price analysis · Scores · Verdicts"
+        "</span></div>",
+        unsafe_allow_html=True,
+    )
+    if NO_DUMMY:
+        st.info("dummy_catalog.csv not found.")
+    else:
+        render_browse_verdict(
+            df_master=df_dummy,
+            df_exploded=df_exp_dummy,
+            vcmap=vcmap_dummy,
+            label="Dummy Data",
+            has_prices=True,
+            chat_key_suffix="dd",
+        )
+
+
+with tab_upload:
+    render_upload_and_score_tab(df_master, df_exp_master, df_dummy, df_exp_dummy, NO_DUMMY)
+
+
+with tab_data:
+    render_data_table_tab(df_master, df_dummy)
+
+
+with tab_upload_cat:
+    render_upload_catalog_tab()
+
+
+with tab_vendor:
+    render_vendor_analysis_tab(df_dummy, df_exp_dummy, vcmap_dummy, NO_DUMMY)
