@@ -1,0 +1,47 @@
+IT PROCUREMENT — MASTER CATALOG,,,,,
+Category,Vendor,File Name,Quoted Price,Comments,File Link
+Network & Telecom,NTT Data,NTT_Cisco_Catalyst_C9300_Quote.xlsx,"185,000.00","Cisco Catalyst C9300
+Cisco Catalyst C9200
+Cisco Wireless 9176I",demo_quotes\NTT_Cisco_Catalyst_C9300_Quote.xlsx
+Network & Telecom,NTT Data,NTT_Network_Core_Infrastructure.xlsx,"320,000.00","Cisco Catalyst C8300
+Cisco ISR 4451
+Network Installation",demo_quotes\NTT_Network_Core_Infrastructure.xlsx
+Cybersecurity,NTT Data,NTT_Firewall_Proposal.xlsx,"210,000.00","Palo Alto Firewall
+FortiGate 600E
+Security Audit",demo_quotes\NTT_Firewall_Proposal.xlsx
+Network & Telecom,TPS,TPS_Cisco_Catalyst_Quote_2024.xlsx,"172,000.00","Cisco Catalyst C9300
+Cisco Catalyst C9200L
+Cisco Wireless 9172I",demo_quotes\TPS_Cisco_Catalyst_Quote_2024.xlsx
+Network & Telecom,TPS,TPS_Wireless_Infra_Proposal.xlsx,"145,000.00","Cisco Wireless 9176I
+Cisco Wireless 9172I
+Wireless Controller",demo_quotes\TPS_Wireless_Infra_Proposal.xlsx
+Hosting,TPS,TPS_Cloud_Hosting_Services.xlsx,"95,000.00","Azure Virtual Machines
+Azure Storage
+Azure Backup",demo_quotes\TPS_Cloud_Hosting_Services.xlsx
+Network & Telecom,PCC Connection,PCC_Network_Equipment_2024.xlsx,"198,000.00","Cisco Catalyst C9300
+HPE ProCurve Switch
+Network Cabling",demo_quotes\PCC_Network_Equipment_2024.xlsx
+End User Computing,PCC Connection,PCC_Laptop_Desktop_Quote.xlsx,"280,000.00","Dell Latitude 5540
+HP EliteBook 840
+Microsoft Surface Pro",demo_quotes\PCC_Laptop_Desktop_Quote.xlsx
+Hosting,Colocation Env Build,CEB_DataCenter_Colocation.xlsx,"420,000.00","Data Centre Colocation
+Rack Space Rental
+Power & Cooling",demo_quotes\CEB_DataCenter_Colocation.xlsx
+Hosting,Colocation Env Build,CEB_BOM_Japan_DC_Production.xlsx,"380,000.00","Azure Virtual Machines
+Data Centre Colocation
+Network Connectivity",demo_quotes\CEB_BOM_Japan_DC_Production.xlsx
+Software & Licensing,SoftwareONE,SONE_Microsoft365_Enterprise.xlsx,"520,000.00","Microsoft 365 E3
+Microsoft 365 E5
+Azure Active Directory",demo_quotes\SONE_Microsoft365_Enterprise.xlsx
+Software & Licensing,SoftwareONE,SONE_Adobe_Oracle_Licensing.xlsx,"340,000.00","Adobe Creative Cloud
+Oracle Database License
+VMware vSphere",demo_quotes\SONE_Adobe_Oracle_Licensing.xlsx
+Cybersecurity,Dimension Data,DD_Security_SOC_Services.xlsx,"290,000.00","Palo Alto Firewall
+Splunk SIEM
+SOC Managed Services",demo_quotes\DD_Security_SOC_Services.xlsx
+Network & Telecom,Dimension Data,DD_Cisco_Catalyst_C9300_v2.xlsx,"195,000.00","Cisco Catalyst C9300
+Cisco Nexus 9000
+Data Centre Switching",demo_quotes\DD_Cisco_Catalyst_C9300_v2.xlsx
+End User Computing,Dimension Data,DD_EndUser_Devices_2024.xlsx,"310,000.00","Dell Latitude 5540
+Lenovo ThinkPad X1
+Apple MacBook Pro",demo_quotes\DD_EndUser_Devices_2024.xlsx
