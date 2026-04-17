@@ -1971,3 +1971,851 @@ def render_catalog_overview(df_master, df_exploded, label="Master Catalog"):
 
             table_rows.append("</tbody></table>")
             render_html_table(table_rows)
+
+# ============================================================
+# PART 3 — BROWSE & VERDICT
+# ============================================================
+
+def init_chat_state(chat_key: str):
+    chat_history_key = f"chat_history_{chat_key}"
+    if chat_history_key not in st.session_state:
+        st.session_state[chat_history_key] = []
+    return chat_history_key
+
+
+def append_chat_message(chat_history_key: str, user_text: str, response: dict):
+    st.session_state[chat_history_key].append(
+        {
+            "user": user_text,
+            "bot_text": response["text"],
+            "bot_resp": response,
+        }
+    )
+
+
+def render_chat_panel(df_master, df_exploded, chat_key: str):
+    chat_history_key = init_chat_state(chat_key)
+
+    st.markdown(
+        "<div class='chat-header'>"
+        "<span style='font-weight:700;font-size:0.96em;font-family:Georgia,serif'>"
+        "💬 Procurement Assistant</span>"
+        "<span style='font-size:0.74em;opacity:0.6;margin-left:10px'>"
+        "Full catalog knowledge · Upload a quote</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        build_chat_html(st.session_state[chat_history_key]),
+        unsafe_allow_html=True,
+    )
+
+    render_quick_question_buttons(chat_key, df_master, df_exploded, chat_history_key)
+
+    if st.session_state[chat_history_key]:
+        last_response = st.session_state[chat_history_key][-1].get("bot_resp")
+        if last_response:
+            render_chat_chart(last_response)
+
+    uploaded_chat_file = st.file_uploader(
+        "📎 Upload quote file for instant scoring",
+        type=["pdf", "xlsx", "xls", "docx"],
+        key=f"chat_file_{chat_key}",
+    )
+
+    with st.form(f"chat_form_{chat_key}", clear_on_submit=True):
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            user_input = st.text_input(
+                "msg",
+                placeholder="Ask a question…",
+                label_visibility="collapsed",
+            )
+        with c2:
+            sent = st.form_submit_button(
+                "Send",
+                type="primary",
+                use_container_width=True,
+            )
+
+    if sent and user_input.strip():
+        response = chatbot_response(user_input.strip(), df_master, df_exploded)
+        append_chat_message(chat_history_key, user_input.strip(), response)
+        st.rerun()
+
+    last_file_key = f"last_chat_file_{chat_key}"
+    if (
+        uploaded_chat_file is not None
+        and st.session_state.get(last_file_key) != uploaded_chat_file.name
+    ):
+        st.session_state[last_file_key] = uploaded_chat_file.name
+        file_bytes = uploaded_chat_file.read()
+        response = chatbot_response(
+            "uploaded file",
+            df_master,
+            df_exploded,
+            uploaded_file_bytes=file_bytes,
+            uploaded_file_name=uploaded_chat_file.name,
+        )
+        append_chat_message(chat_history_key, f"📎 {uploaded_chat_file.name}", response)
+        st.rerun()
+
+    if st.button("🗑 Clear chat", key=f"clr_{chat_key}"):
+        st.session_state[chat_history_key] = []
+        st.rerun()
+
+
+def vendor_service_matrix(selected_df: pd.DataFrame, selected_services: list[str]) -> pd.DataFrame:
+    heat = []
+    vendors = sorted(selected_df["Vendor"].unique())
+
+    for service in selected_services:
+        for vendor in vendors:
+            has_quote = int(
+                len(
+                    selected_df[
+                        (selected_df["Service"] == service)
+                        & (selected_df["Vendor"] == vendor)
+                    ]
+                ) > 0
+            )
+            heat.append(
+                {
+                    "Service": service[:40],
+                    "Vendor": vendor,
+                    "Covered": has_quote,
+                }
+            )
+    return pd.DataFrame(heat)
+
+
+def extract_vendor_price_map(selected_df: pd.DataFrame, chat_key: str) -> dict:
+    vendor_prices = {}
+
+    deduped = selected_df.drop_duplicates(subset=["Vendor", "File Name"])
+    for _, row in deduped.iterrows():
+        vendor = row["Vendor"]
+        quoted_price = parse_num(str(row.get("Quoted Price", "")).strip())
+
+        cache_key = "px_{}_{}".format(chat_key, str(row.get("File Name", "")).strip())
+        cached_analysis = st.session_state.get(cache_key)
+        extracted_price = cached_analysis["price_num"] if cached_analysis else 0.0
+
+        reference_price = extracted_price if extracted_price > 0 else quoted_price
+        if reference_price > 0:
+            vendor_prices[vendor] = min(vendor_prices.get(vendor, reference_price), reference_price)
+
+    if vendor_prices:
+        return vendor_prices
+
+    for _, row in selected_df.drop_duplicates(subset=["Vendor"]).iterrows():
+        vendor = row["Vendor"]
+        quoted_price = parse_num(str(row.get("Quoted Price", "")).strip())
+        if quoted_price > 0 and vendor not in vendor_prices:
+            vendor_prices[vendor] = quoted_price
+
+    return vendor_prices
+
+
+def render_service_competitiveness_map(df_exploded: pd.DataFrame):
+    sec(
+        "SERVICE COMPETITIVENESS MAP",
+        "Orange = multiple vendors · Grey = single vendor only",
+    )
+
+    service_summary = (
+        df_exploded.groupby("Service")["Vendor"]
+        .nunique()
+        .reset_index()
+        .sort_values("Vendor", ascending=False)
+    )
+    service_summary.columns = ["Service", "Vendor Count"]
+
+    top_20 = service_summary.head(20)
+
+    fig = go.Figure(
+        go.Bar(
+            x=top_20["Vendor Count"],
+            y=top_20["Service"].apply(lambda x: x[:48]),
+            orientation="h",
+            marker_color=[
+                C_ORANGE if count > 1 else C_GREY
+                for count in top_20["Vendor Count"]
+            ],
+            marker_line_width=0,
+            text=top_20["Vendor Count"],
+            textposition="outside",
+            textfont=dict(size=10),
+        )
+    )
+
+    fig.update_layout(
+        height=520,
+        plot_bgcolor=CBG,
+        paper_bgcolor=CBG,
+        margin=dict(l=5, r=40, t=10, b=8),
+        font=CFONT,
+        xaxis=dict(
+            title="Number of Vendors",
+            showgrid=True,
+            gridcolor=C_GREY_LITE,
+            zeroline=False,
+        ),
+        yaxis=dict(autorange="reversed", tickfont=dict(size=9.2)),
+        bargap=0.28,
+        showlegend=False,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    multi_vendor = service_summary[service_summary["Vendor Count"] > 1].shape[0]
+    single_vendor = service_summary[service_summary["Vendor Count"] == 1].shape[0]
+
+    k1, k2, k3 = st.columns(3)
+    kpi_box(k1, len(service_summary), "Total Services", C_DARK)
+    kpi_box(k2, multi_vendor, "Competitive (2+ vendors)", C_ORANGE)
+    kpi_box(k3, single_vendor, "Single Vendor Only", C_GREY_DARK)
+
+
+def render_coverage_verdict(selected_df: pd.DataFrame, selected_services: list[str]):
+    vendor_service_map = defaultdict(set)
+    for _, row in selected_df.iterrows():
+        vendor_service_map[row["Vendor"]].add(row["Service"])
+
+    full_coverage = [
+        vendor for vendor, services in vendor_service_map.items()
+        if set(selected_services).issubset(services)
+    ]
+    partial_coverage = [
+        vendor for vendor, services in vendor_service_map.items()
+        if set(selected_services) & services and vendor not in full_coverage
+    ]
+
+    if len(selected_services) == 1:
+        vendor_count = selected_df["Vendor"].nunique()
+        if vendor_count > 1:
+            st.markdown(
+                "<div class='verdict-good'>"
+                "✅ <b>{}</b> — quoted by <b>{} vendors</b>."
+                "</div>".format(selected_services[0], vendor_count),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                "<div class='verdict-mid'>"
+                "⚠️ <b>{}</b> — only <b>1 vendor</b>."
+                "</div>".format(selected_services[0]),
+                unsafe_allow_html=True,
+            )
+    else:
+        if full_coverage:
+            st.markdown(
+                "<div class='verdict-good'>"
+                "✅ <b>{}</b> vendor(s) cover ALL {}: <b>{}</b>"
+                "</div>".format(
+                    len(full_coverage),
+                    len(selected_services),
+                    ", ".join(full_coverage),
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                "<div class='verdict-mid'>"
+                "⚠️ No single vendor covers all {}. Partial: <b>{}</b>"
+                "</div>".format(
+                    len(selected_services),
+                    ", ".join(partial_coverage) if partial_coverage else "None",
+                ),
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+
+def render_vendor_service_heatmap(selected_df: pd.DataFrame, selected_services: list[str]):
+    sec("VENDOR × SERVICE COVERAGE MAP", "✅ = vendor has quoted this service")
+
+    heat_df = vendor_service_matrix(selected_df, selected_services)
+    if heat_df.empty:
+        return
+
+    pivot = heat_df.pivot_table(
+        index="Service",
+        columns="Vendor",
+        values="Covered",
+        fill_value=0,
+    )
+
+    fig = go.Figure(
+        go.Heatmap(
+            z=pivot.values,
+            x=pivot.columns.tolist(),
+            y=pivot.index.tolist(),
+            colorscale=[[0, C_GREY_LITE], [1, C_ORANGE]],
+            showscale=False,
+            text=[
+                ["✅" if val == 1 else "—" for val in row]
+                for row in pivot.values
+            ],
+            texttemplate="%{text}",
+            textfont=dict(size=16),
+        )
+    )
+
+    fig.update_layout(
+        height=max(180, len(selected_services) * 65),
+        plot_bgcolor=CBG,
+        paper_bgcolor=CBG,
+        margin=dict(l=5, r=10, t=10, b=10),
+        font=CFONT,
+        xaxis=dict(tickangle=-20, tickfont=dict(size=10)),
+        yaxis=dict(tickfont=dict(size=9.5), autorange="reversed"),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_quotes_per_vendor_chart(selected_df: pd.DataFrame, vcmap: dict):
+    sec("QUOTES PER VENDOR", "Number of quote files per vendor")
+
+    vendor_quote_df = (
+        selected_df.drop_duplicates(subset=["Vendor", "File Name"])
+        .groupby("Vendor")
+        .size()
+        .reset_index()
+    )
+    vendor_quote_df.columns = ["Vendor", "Quotes"]
+    vendor_quote_df = vendor_quote_df.sort_values("Quotes", ascending=False)
+
+    fig = go.Figure(
+        go.Bar(
+            x=vendor_quote_df["Vendor"],
+            y=vendor_quote_df["Quotes"],
+            marker_color=[vcmap.get(vendor, C_DARK) for vendor in vendor_quote_df["Vendor"]],
+            marker_line_width=0,
+            text=vendor_quote_df["Quotes"],
+            textposition="outside",
+        )
+    )
+
+    fig.update_layout(
+        height=260,
+        plot_bgcolor=CBG,
+        paper_bgcolor=CBG,
+        margin=dict(l=5, r=10, t=10, b=8),
+        font=CFONT,
+        yaxis=dict(title="Quote Files", showgrid=True, gridcolor=C_GREY_LITE, zeroline=False),
+        xaxis=dict(tickangle=-15, tickfont=dict(size=10.5)),
+        bargap=0.4,
+        showlegend=False,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_vendors_per_service_chart(selected_df: pd.DataFrame, selected_services: list[str]):
+    if len(selected_services) <= 1:
+        return
+
+    sec("VENDORS PER SERVICE")
+
+    rows = []
+    for service in selected_services:
+        vendor_count = selected_df[selected_df["Service"] == service]["Vendor"].nunique()
+        rows.append({"Service": service[:45], "Vendors": vendor_count})
+
+    service_vendor_df = pd.DataFrame(rows)
+
+    fig = go.Figure(
+        go.Bar(
+            x=service_vendor_df["Service"],
+            y=service_vendor_df["Vendors"],
+            marker_color=[
+                C_ORANGE if count > 1 else C_GREY_DARK
+                for count in service_vendor_df["Vendors"]
+            ],
+            marker_line_width=0,
+            text=service_vendor_df["Vendors"],
+            textposition="outside",
+        )
+    )
+
+    fig.update_layout(
+        height=260,
+        plot_bgcolor=CBG,
+        paper_bgcolor=CBG,
+        margin=dict(l=5, r=10, t=10, b=8),
+        font=CFONT,
+        yaxis=dict(title="Vendors", showgrid=True, gridcolor=C_GREY_LITE, zeroline=False),
+        xaxis=dict(tickangle=-15, tickfont=dict(size=10)),
+        bargap=0.4,
+        showlegend=False,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_price_verdict_cards(vendor_prices: dict):
+    avg_price = sum(vendor_prices.values()) / len(vendor_prices)
+    best_vendor = min(vendor_prices, key=vendor_prices.get)
+    spread = (
+        round((max(vendor_prices.values()) - min(vendor_prices.values())) / min(vendor_prices.values()) * 100, 1)
+        if min(vendor_prices.values()) > 0
+        else 0
+    )
+
+    sec("PRICE VERDICT")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.markdown(
+        "<div class='scard scard-orange'>"
+        "<div style='font-size:0.67em;font-weight:700;text-transform:uppercase;color:#D04A02'>"
+        "Best Price</div>"
+        "<div style='font-size:1.5em;font-weight:800;color:#D04A02;font-family:Georgia,serif'>"
+        "{}</div>"
+        "<div style='font-size:0.73em;color:#7D7D7D;margin-top:2px'>{}</div>"
+        "</div>".format(
+            fmt_currency(min(vendor_prices.values())),
+            best_vendor,
+        ),
+        unsafe_allow_html=True,
+    )
+
+    c2.markdown(
+        "<div class='scard scard-dark'>"
+        "<div style='font-size:0.67em;font-weight:700;text-transform:uppercase;color:#2D2D2D'>"
+        "Market Average</div>"
+        "<div style='font-size:1.5em;font-weight:800;color:#2D2D2D;font-family:Georgia,serif'>"
+        "{}</div>"
+        "<div style='font-size:0.73em;color:#7D7D7D;margin-top:2px'>{} vendors</div>"
+        "</div>".format(
+            fmt_currency(avg_price),
+            len(vendor_prices),
+        ),
+        unsafe_allow_html=True,
+    )
+
+    c3.markdown(
+        "<div class='scard scard-grey'>"
+        "<div style='font-size:0.67em;font-weight:700;text-transform:uppercase;color:#7D7D7D'>"
+        "Price Spread</div>"
+        "<div style='font-size:1.5em;font-weight:800;color:#4A4A4A;font-family:Georgia,serif'>"
+        "{}%</div>"
+        "<div style='font-size:0.73em;color:#7D7D7D;margin-top:2px'>negotiation room</div>"
+        "</div>".format(spread),
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    return avg_price, best_vendor, spread
+
+
+def render_price_comparison_chart(vendor_prices: dict, avg_price: float, best_vendor: str):
+    sec("PRICE COMPARISON CHART", "Orange = best · Dark = highest · Dashed = market average")
+
+    sorted_vendor_prices = sorted(vendor_prices.items(), key=lambda x: x[1])
+    worst_vendor = max(vendor_prices, key=vendor_prices.get)
+
+    colors = [
+        C_ORANGE if vendor == best_vendor
+        else C_DARK if vendor == worst_vendor
+        else C_GREY_DARK
+        for vendor, _ in sorted_vendor_prices
+    ]
+
+    fig = go.Figure(
+        go.Bar(
+            x=[vendor for vendor, _ in sorted_vendor_prices],
+            y=[price for _, price in sorted_vendor_prices],
+            marker_color=colors,
+            marker_line_width=0,
+            text=[fmt_currency(price) for _, price in sorted_vendor_prices],
+            textposition="outside",
+            textfont=dict(size=11, color=C_DARK),
+        )
+    )
+
+    fig.add_hline(
+        y=avg_price,
+        line_dash="dash",
+        line_color=C_MID,
+        line_width=2,
+        annotation_text="Avg: {}".format(fmt_currency(avg_price)),
+        annotation_position="top right",
+    )
+
+    fig.update_layout(
+        height=290,
+        plot_bgcolor=CBG,
+        paper_bgcolor=CBG,
+        margin=dict(l=5, r=10, t=24, b=8),
+        font=CFONT,
+        yaxis=dict(title="Price (USD)", showgrid=True, gridcolor=C_GREY_LITE, zeroline=False),
+        xaxis=dict(tickangle=-10, tickfont=dict(size=10.5)),
+        bargap=0.4,
+        showlegend=False,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_vendor_scorecard(vendor_prices: dict, vcmap: dict, avg_price: float, spread: float):
+    sec("VENDOR SCORE CARD")
+
+    all_prices = list(vendor_prices.values())
+
+    table_rows = [
+        "<table class='comp-table'><thead><tr>"
+        "<th>Rank</th><th>Vendor</th><th>Price</th><th>vs Average</th><th>Score</th><th>Verdict</th>"
+        "</tr></thead><tbody>"
+    ]
+
+    for rank, (vendor, price) in enumerate(sorted(vendor_prices.items(), key=lambda x: x[1]), 1):
+        bg = "white" if rank % 2 == 0 else "#F8F8F8"
+        vendor_color = vcmap.get(vendor, C_DARK)
+        other_prices = [p for p in all_prices if p != price]
+
+        score = None
+        if price > 0 and other_prices:
+            score, _, _, _, _ = price_score(price, other_prices)
+
+        score_col = score_color(score)
+        pct = round((price - avg_price) / avg_price * 100, 1) if avg_price > 0 else 0
+
+        vs_text = (
+            "{}% below ✅".format(abs(pct))
+            if pct < 0
+            else "{}% above ⚠️".format(abs(pct)) if pct > 0 else "At average"
+        )
+        vs_color = C_ORANGE if pct < 0 else C_DARK if pct > 10 else C_GREY_DARK
+
+        verdict_text, _, verdict_color = get_verdict(score)
+
+        medal = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else str(rank)
+
+        table_rows.append(
+            "<tr style='background:{}'>"
+            "<td style='text-align:center;font-size:1.05em'>{}</td>"
+            "<td>{}</td>"
+            "<td style='font-family:monospace;font-weight:700'>{}</td>"
+            "<td style='color:{}'>{}</td>"
+            "<td style='text-align:center'><span style='font-weight:800;font-size:1.1em;color:{}'>{}</span></td>"
+            "<td style='font-weight:700;color:{}'>{}</td>"
+            "</tr>".format(
+                bg,
+                medal,
+                vpill(vendor, vendor_color),
+                fmt_currency(price),
+                vs_color,
+                vs_text,
+                score_col,
+                score if score is not None else "—",
+                verdict_color,
+                verdict_text,
+            )
+        )
+
+    table_rows.append("</tbody></table>")
+    render_html_table(table_rows)
+
+    pct_below = round((avg_price - min(vendor_prices.values())) / avg_price * 100, 1) if avg_price > 0 else 0
+    insight(
+        "<b>{}</b> is most competitive at <b>{}</b> — <b>{}% below</b> market avg. "
+        "Spread <b>{}%</b> → <b>{}</b>.".format(
+            min(vendor_prices, key=vendor_prices.get),
+            fmt_currency(min(vendor_prices.values())),
+            pct_below,
+            spread,
+            "strong negotiation potential" if spread > 20 else "moderate room" if spread > 10 else "competitive market",
+        )
+    )
+
+
+def extract_prices_for_service_rows(service_df: pd.DataFrame, chat_key: str):
+    progress = st.progress(0)
+    total = len(service_df)
+
+    for idx, (_, row) in enumerate(service_df.iterrows()):
+        filename = str(row.get("File Name", "")).strip()
+        cache_key = f"px_{chat_key}_{filename}"
+
+        if not st.session_state.get(cache_key):
+            local_path = os.path.join(DEMO_DIR, filename)
+
+            if os.path.exists(local_path):
+                st.session_state[cache_key] = extract_price_from_file(local_path)
+            else:
+                url = resolve_url(row)
+                if url and url.startswith("http") and REQUESTS_OK:
+                    try:
+                        response = requests.get(url, timeout=20)
+                        ext = url.split("?")[0].rsplit(".", 1)[-1].lower()
+                        st.session_state[cache_key] = extract_price_from_bytes(response.content, ext)
+                    except Exception:
+                        pass
+
+        progress.progress((idx + 1) / total)
+
+    progress.empty()
+
+
+def render_quote_file_details(selected_df: pd.DataFrame, selected_services: list[str], vcmap: dict, has_prices: bool, chat_key: str):
+    st.markdown("<br>", unsafe_allow_html=True)
+    sec("QUOTATION FILE DETAILS")
+
+    has_price_column = "Quoted Price" in selected_df.columns
+
+    for service in selected_services:
+        service_df = (
+            selected_df[selected_df["Service"] == service]
+            .drop_duplicates(subset=["Vendor", "File Name"])
+            .sort_values("Vendor")
+        )
+
+        vendor_count = service_df["Vendor"].nunique()
+
+        st.markdown(
+            "<div style='background:white;border-left:4px solid {};padding:10px 14px;border-radius:2px;margin:8px 0;font-weight:700;font-size:0.88em'>"
+            "{}  ·  {} vendor(s)  ·  {}"
+            "</div>".format(
+                C_ORANGE if vendor_count > 1 else C_GREY_DARK,
+                service,
+                vendor_count,
+                "✅ COMPETITIVE" if vendor_count > 1 else "⚠️ SINGLE VENDOR",
+            ),
+            unsafe_allow_html=True,
+        )
+
+        all_prices = []
+        for _, row in service_df.iterrows():
+            quoted_price = parse_num(str(row.get("Quoted Price", "")).strip())
+            if quoted_price > 0:
+                all_prices.append(quoted_price)
+
+        table_rows = [
+            "<table class='comp-table'><thead><tr>"
+            "<th>Vendor</th><th>File</th>"
+        ]
+        if has_price_column:
+            table_rows.append("<th>Quoted Price</th>")
+        table_rows.append("<th>Score</th><th>Verdict</th><th>Open</th></tr></thead><tbody>")
+
+        for idx, (_, row) in enumerate(service_df.iterrows()):
+            bg = "white" if idx % 2 == 0 else "#F8F8F8"
+            vendor_color = vcmap.get(row["Vendor"], C_DARK)
+            filename = str(row.get("File Name", "")).strip()
+            url = resolve_url(row)
+
+            quoted_price_num = parse_num(str(row.get("Quoted Price", "")).strip())
+            cache_key = f"px_{chat_key}_{filename}"
+            cached_analysis = st.session_state.get(cache_key)
+
+            reference_price = (
+                cached_analysis["price_num"]
+                if cached_analysis and cached_analysis.get("price_num", 0) > 0
+                else quoted_price_num if quoted_price_num > 0 else 0
+            )
+
+            other_prices = [p for p in all_prices if p != reference_price]
+            score = None
+            verdict = "—"
+            verdict_color = C_GREY_DARK
+
+            if reference_price > 0 and other_prices:
+                score, _, _, _, _ = price_score(reference_price, other_prices)
+                verdict, _, verdict_color = get_verdict(score)
+
+            score_col = score_color(score)
+
+            link = (
+                "<a href='{}' target='_blank' style='color:#D04A02;font-weight:600;text-decoration:none'>📂 Open</a>".format(url)
+                if url
+                else "—"
+            )
+
+            row_html = (
+                "<tr style='background:{}'>"
+                "<td>{}</td>"
+                "<td style='font-family:monospace;font-size:0.77em;word-break:break-all'>{}</td>".format(
+                    bg,
+                    vpill(row["Vendor"], vendor_color),
+                    filename,
+                )
+            )
+
+            if has_price_column:
+                row_html += (
+                    "<td style='font-family:monospace;font-weight:700;color:#D04A02'>{}</td>".format(
+                        fmt_currency(quoted_price_num) if quoted_price_num > 0 else "—"
+                    )
+                )
+
+            row_html += (
+                "<td style='text-align:center'><span style='font-weight:800;color:{}'>{}</span></td>"
+                "<td style='font-weight:700;color:{}'>{}</td>"
+                "<td>{}</td>"
+                "</tr>".format(
+                    score_col,
+                    "{}/100".format(score) if score is not None else "—",
+                    verdict_color,
+                    verdict,
+                    link,
+                )
+            )
+
+            table_rows.append(row_html)
+
+        table_rows.append("</tbody></table>")
+        render_html_table(table_rows)
+
+        if has_prices or os.path.exists(DEMO_DIR):
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button(
+                "🔍 Extract Prices — {}".format(service[:38]),
+                key="ep_{}_{}".format(chat_key, service[:28]),
+                type="primary",
+            ):
+                extract_prices_for_service_rows(service_df, chat_key)
+                st.rerun()
+
+
+def render_browse_verdict(
+    df_master,
+    df_exploded,
+    vcmap,
+    label="",
+    has_prices=False,
+    chat_key_suffix="",
+):
+    st.session_state["vendor_color_map"] = vcmap
+
+    st.markdown("<div class='filter-bar'>", unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
+
+    all_categories = ["All"] + sorted(
+        [
+            category
+            for category in df_master["Category"].unique()
+            if str(category).strip() not in ["", "nan"]
+        ]
+    )
+
+    with c1:
+        st.markdown(
+            "<p style='color:#D04A02;font-size:0.77em;font-weight:700;margin-bottom:4px;letter-spacing:0.6px;text-transform:uppercase'>📂 CATEGORY</p>",
+            unsafe_allow_html=True,
+        )
+        selected_category = st.selectbox(
+            "cat",
+            all_categories,
+            label_visibility="collapsed",
+            key=f"bv_cat_{chat_key_suffix}",
+        )
+
+    vendor_pool_df = df_master if selected_category == "All" else df_master[df_master["Category"] == selected_category]
+    all_vendors = ["All"] + sorted(
+        [
+            vendor
+            for vendor in vendor_pool_df["Vendor"].unique()
+            if str(vendor).strip() not in ["", "nan"]
+        ]
+    )
+
+    with c2:
+        st.markdown(
+            "<p style='color:#D04A02;font-size:0.77em;font-weight:700;margin-bottom:4px;letter-spacing:0.6px;text-transform:uppercase'>🏢 VENDOR</p>",
+            unsafe_allow_html=True,
+        )
+        selected_vendor = st.selectbox(
+            "ven",
+            all_vendors,
+            label_visibility="collapsed",
+            key=f"bv_ven_{chat_key_suffix}",
+        )
+
+    with c3:
+        st.markdown(
+            "<p style='color:#D04A02;font-size:0.77em;font-weight:700;margin-bottom:4px;letter-spacing:0.6px;text-transform:uppercase'>🔍 SEARCH SERVICE</p>",
+            unsafe_allow_html=True,
+        )
+        service_filter = st.text_input(
+            "svc",
+            placeholder="Type to filter…",
+            label_visibility="collapsed",
+            key=f"bv_svc_{chat_key_suffix}",
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    filtered_df = df_exploded.copy()
+    if selected_category != "All":
+        filtered_df = filtered_df[filtered_df["Category"] == selected_category]
+    if selected_vendor != "All":
+        filtered_df = filtered_df[filtered_df["Vendor"] == selected_vendor]
+
+    available_services = sorted(
+        [
+            service
+            for service in filtered_df["Service"].unique()
+            if str(service).strip() not in ["", "nan"]
+        ]
+    )
+
+    if service_filter:
+        available_services = [
+            service for service in available_services
+            if service_filter.lower() in service.lower()
+        ]
+
+    left_col, right_col = st.columns([1, 1], gap="large")
+
+    with left_col:
+        render_chat_panel(df_master, df_exploded, chat_key_suffix)
+
+    with right_col:
+        sec("SERVICE BROWSER")
+
+        selected_services = st.multiselect(
+            "Select services to analyse",
+            options=available_services,
+            default=[],
+            label_visibility="visible",
+            key=f"sel_svcs_{chat_key_suffix}",
+        )
+
+        if not selected_services:
+            render_service_competitiveness_map(filtered_df)
+            return
+
+        selected_df = filtered_df[filtered_df["Service"].isin(selected_services)].copy()
+        if selected_df.empty:
+            st.warning("No quotations found.")
+            return
+
+        vendor_prices = extract_vendor_price_map(selected_df, chat_key_suffix)
+
+        render_coverage_verdict(selected_df, selected_services)
+        render_vendor_service_heatmap(selected_df, selected_services)
+        render_quotes_per_vendor_chart(selected_df, vcmap)
+        render_vendors_per_service_chart(selected_df, selected_services)
+
+        if vendor_prices:
+            avg_price, best_vendor, spread = render_price_verdict_cards(vendor_prices)
+            render_price_comparison_chart(vendor_prices, avg_price, best_vendor)
+            render_vendor_scorecard(vendor_prices, vcmap, avg_price, spread)
+        elif not has_prices:
+            st.markdown(
+                "<div class='insight-box'>"
+                "ℹ️ Price data is not available for the Master Catalog — quotation files are stored on "
+                "SharePoint. Switch to the <b>Dummy Data</b> tabs to see full price analysis."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+        render_quote_file_details(
+            selected_df=selected_df,
+            selected_services=selected_services,
+            vcmap=vcmap,
+            has_prices=has_prices,
+            chat_key=chat_key_suffix,
+        )
